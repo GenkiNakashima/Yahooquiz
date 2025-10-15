@@ -195,7 +195,20 @@ Explanation: （ここに解説）
                 
             return None
         except Exception as e:
-            print(f"クイズ生成エラー: {e}")
+            # 429レート制限時のフォールバック（簡易問題を返す）
+            err_text = str(e)
+            print(f"クイズ生成エラー: {err_text}")
+            if '429' in err_text or 'RATE_LIMIT' in err_text or 'RATE_LIMIT_EXCEEDED' in err_text:
+                # テキストから簡易的に固有名詞らしき語を抽出（非常に単純なフォールバック）
+                keywords = [w for w in text.split() if len(w) >= 2]
+                fallback_answer = (keywords[0][:12] if keywords else 'ニュース')
+                fallback_question = '本文のキーワードは何？'
+                fallback_explanation = 'レート制限のため簡易問題を表示しています。'
+                return {
+                    'question': fallback_question,
+                    'answer': fallback_answer,
+                    'explanation': fallback_explanation
+                }
             return None
 
     def create_quiz(self):

@@ -3,6 +3,7 @@ from flask import Flask, render_template, request, session, redirect, url_for
 from datetime import datetime
 from honban import QuizGenerator
 import os
+from flask import send_from_directory
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key')
@@ -13,6 +14,12 @@ if not api_key:
     raise ValueError("GEMINI_API_KEY environment variable is required")
 
 quiz_generator = QuizGenerator(api_key=api_key)
+
+@app.route('/favicon.ico')
+def favicon():
+   """ブラウザのfavicon要求に200で応答（404ノイズ抑制）。"""
+   # staticにfaviconが無い場合でも空レスポンスでOK
+   return ('', 200, {'Content-Type': 'image/x-icon'})
 
 @app.route('/')
 def index():

@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, request, session, redirect, url_for, jsonify
+from flask import Flask, render_template, request, session, redirect, url_for, jsonify,send_from_directory
 from datetime import datetime
 from honban import QuizGenerator
 from firebase_service import FirebaseService
@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 # .envファイルを読み込み
 load_dotenv()
 
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "your_secret_key")
 
@@ -19,6 +20,7 @@ if not api_key:
     raise ValueError("GEMINI_API_KEY environment variable is required")
 
 quiz_generator = QuizGenerator(api_key=api_key)
+
 
 # Firebaseサービスのインスタンスを作成（エラー時は無効化）
 try:

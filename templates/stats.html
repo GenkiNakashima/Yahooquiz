@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>統計情報 - AI早押しクイズ対決</title>
+    <link rel="stylesheet" href="static/css/style.css" />
+    <style>
+      .stats-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+        margin-bottom: 40px;
+      }
+
+      .stats-card {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .stats-card h3 {
+        margin-top: 0;
+        color: #333;
+        border-bottom: 2px solid #4caf50;
+        padding-bottom: 10px;
+      }
+
+      .stat-item {
+        display: flex;
+        justify-content: space-between;
+        margin: 10px 0;
+        padding: 8px 0;
+        border-bottom: 1px solid #eee;
+      }
+
+      .stat-label {
+        font-weight: bold;
+        color: #666;
+      }
+
+      .stat-value {
+        color: #333;
+        font-weight: bold;
+      }
+
+      .recent-results {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .result-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px;
+        margin: 10px 0;
+        background: #f9f9f9;
+        border-radius: 5px;
+        border-left: 4px solid #4caf50;
+      }
+
+      .result-item.lose {
+        border-left-color: #f44336;
+      }
+
+      .result-item.draw {
+        border-left-color: #ff9800;
+      }
+
+      .result-info {
+        display: flex;
+        gap: 20px;
+        align-items: center;
+      }
+
+      .result-score {
+        font-weight: bold;
+        font-size: 1.1em;
+      }
+
+      .result-meta {
+        font-size: 0.9em;
+        color: #666;
+      }
+
+      .refresh-button {
+        background: #4caf50;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-bottom: 20px;
+      }
+
+      .refresh-button:hover {
+        background: #45a049;
+      }
+
+      @media (max-width: 768px) {
+        .stats-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .result-info {
+          flex-direction: column;
+          gap: 5px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>統計情報</h1>
+
+      <button class="refresh-button" onclick="location.reload()">更新</button>
+
+      <div class="stats-grid">
+        <!-- 全体統計 -->
+        <div class="stats-card">
+          <h3>📊 全体統計</h3>
+          <div class="stat-item">
+            <span class="stat-label">総ゲーム数</span>
+            <span class="stat-value">{{ statistics.total_games }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">プレイヤー勝利</span>
+            <span class="stat-value">{{ statistics.player_wins }}回</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">AI勝利</span>
+            <span class="stat-value">{{ statistics.ai_wins }}回</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">引き分け</span>
+            <span class="stat-value">{{ statistics.draws }}回</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">勝率</span>
+            <span class="stat-value">{{ statistics.win_rate }}%</span>
+          </div>
+        </div>
+
+        <!-- 平均スコア -->
+        <div class="stats-card">
+          <h3>🎯 平均スコア</h3>
+          <div class="stat-item">
+            <span class="stat-label">プレイヤー平均</span>
+            <span class="stat-value"
+              >{{ statistics.average_player_score }}点</span
+            >
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">AI平均</span>
+            <span class="stat-value">{{ statistics.average_ai_score }}点</span>
+          </div>
+
+          <h4 style="margin-top: 20px; color: #666">AIレベル分布</h4>
+          <div class="stat-item">
+            <span class="stat-label">強い</span>
+            <span class="stat-value"
+              >{{ statistics.ai_level_distribution.strong }}回</span
+            >
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">普通</span>
+            <span class="stat-value"
+              >{{ statistics.ai_level_distribution.normal }}回</span
+            >
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">弱い</span>
+            <span class="stat-value"
+              >{{ statistics.ai_level_distribution.weak }}回</span
+            >
+          </div>
+        </div>
+      </div>
+
+      <!-- 最近の結果 -->
+      <div class="recent-results">
+        <h3>📈 最近の結果</h3>
+        {% if recent_results %} {% for result in recent_results %}
+        <div
+          class="result-item {% if result.winner == 'player' %}win{% elif result.winner == 'ai' %}lose{% else %}draw{% endif %}"
+        >
+          <div class="result-info">
+            <div class="result-score">
+              {{ result.player_score }} - {{ result.ai_score }}
+            </div>
+            <div class="result-meta">
+              AIレベル: {{ result.ai_level }} | {{ result.total_rounds }}問 | {%
+              if result.game_duration %} {{ result.game_duration }}秒 {% endif
+              %}
+            </div>
+          </div>
+          <div class="result-meta">
+            {{ result.timestamp[:19] if result.timestamp else '' }}
+          </div>
+        </div>
+        {% endfor %} {% else %}
+        <p>まだ結果がありません。ゲームをプレイしてみてください！</p>
+        {% endif %}
+      </div>
+
+      <div style="text-align: center; margin-top: 30px">
+        <a href="/" class="retry-button">ゲームに戻る</a>
+      </div>
+    </div>
+  </body>
+</html>
+

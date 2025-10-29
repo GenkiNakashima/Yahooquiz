@@ -1,36 +1,37 @@
 <!-- templates/index.html -->
 <!DOCTYPE html>
 <html>
-<head>
-   <title>JAIJAI - AI早押しクイズ対決</title>
-   <link rel="stylesheet" href="static/css/style.css">
-</head>
-<body>
-   
-   <div class="floating-icons">
-       
-       <span class="icon" style="top: 20%; right: 15%;">○</span>
-       <span class="icon" style="bottom: 30%; left: 20%;">+</span>
-       <span class="icon" style="bottom: 20%; right: 25%;">↗</span>
-   </div>
+  <head>
+    <title>JAIJAI - AI早押しクイズ対決</title>
+    <link rel="stylesheet" href="static/css/style.css" />
+  </head>
+  <body>
+    <div class="floating-icons">
+      <span class="icon" style="top: 20%; right: 15%">○</span>
+      <span class="icon" style="bottom: 30%; left: 20%">+</span>
+      <span class="icon" style="bottom: 20%; right: 25%">↗</span>
+    </div>
 
-   <div class="container">
-       <div class="title-box">
-           <h1 class="title">JAIJAI</h1>
-           <p class="subtitle">〜若者にニュースに興味を持ってもらおう〜</p>
-       </div>
+    <div class="container">
+      <div class="title-box">
+        <h1 class="title">JAIJAI</h1>
+        <p class="subtitle">〜若者にニュースに興味を持ってもらおう〜</p>
+      </div>
 
-       <div class="rules">
-           <h2>ルール説明</h2>
-           <ul>
-               <li>最新ニュースについての問題が出題されます</li>
-               <li>早押しボタンを押して回答権を獲得しましょう</li>
-               <li>AIより先に押せなかった場合は、AIが回答します</li>
-               <li>全5問で対決します</li>
-           </ul>
-       </div>
+      <div class="rules">
+        <h2>ルール説明</h2>
+        <ul>
+          <li>最新ニュースについての問題が出題されます</li>
+          <li>早押しボタンを押して回答権を獲得しましょう</li>
+          <li>AIより先に押せなかった場合は、AIが回答します</li>
+          <li>全5問で対決します</li>
+        </ul>
+      </div>
 
-       <a href="/game" class="start-button">ゲームスタート</a>
-   </div>
-</body>
+      <div class="button-group">
+        <a href="/game" class="start-button">ゲームスタート</a>
+        <a href="/stats" class="start-button">統計を見る</a>
+      </div>
+    </div>
+  </body>
 </html>

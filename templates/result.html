@@ -1,37 +1,47 @@
 <!DOCTYPE html>
 <html>
-<head>
+  <head>
     <title>結果発表 - AI早押しクイズ対決</title>
-    <link rel="stylesheet" href="static/css/style.css">
-</head>
-<body>
+    <link rel="stylesheet" href="static/css/style.css" />
+  </head>
+  <body>
     <div class="container">
-        <h1>結果発表</h1>
-        <div class="score-board">
-            <div class="player-score">
-                <h2>あなたのスコア</h2>
-                <p>{{ player_score }}点</p>
-            </div>
-            <div class="vs">VS</div>
-            <div class="ai-score">
-                <h2>AIのスコア</h2>
-                <p>{{ ai_score }}点</p>
-            </div>
+      <h1>結果発表</h1>
+      <div class="score-board">
+        <div class="player-score">
+          <h2>あなたのスコア</h2>
+          <p>{{ player_score }}点</p>
         </div>
-        
-        <<div class="result-message {% if player_score > ai_score %}win{% elif player_score < ai_score %}lose{% else %}draw{% endif %}">
-            {% if player_score > ai_score %}
-                <h2>🎉 おめでとう！あなたの勝利です！ 🎉</h2>
-            {% elif player_score < ai_score %}
-                <h2>😢 AIの勝利...次は頑張ろう！</h2>
-            {% else %}
-                <h2>🤝 引き分け！いい勝負でした！</h2>
-            {% endif %}
+        <div class="vs">VS</div>
+        <div class="ai-score">
+          <h2>AIのスコア</h2>
+          <p>{{ ai_score }}点</p>
         </div>
-        
-       
-        
+      </div>
+
+      <div
+        class="result-message {% if player_score > ai_score %}win{% elif player_score < ai_score %}lose{% else %}draw{% endif %}"
+      >
+        {% if player_score > ai_score %}
+        <h2>🎉 おめでとう！あなたの勝利です！ 🎉</h2>
+        {% elif player_score < ai_score %}
+        <h2>😢 AIの勝利...次は頑張ろう！</h2>
+        {% else %}
+        <h2>🤝 引き分け！いい勝負でした！</h2>
+        {% endif %}
+      </div>
+
+      <div class="game-info">
+        <p><strong>AIレベル:</strong> {{ ai_level }}</p>
+        {% if game_duration %}
+        <p><strong>ゲーム時間:</strong> {{ game_duration }}秒</p>
+        {% endif %}
+      </div>
+
+      <div class="action-buttons">
         <a href="/" class="retry-button">もう一度チャレンジ</a>
+        <a href="/stats" class="start-button">統計を見る</a>
+      </div>
     </div>
-</body>
+  </body>
 </html>

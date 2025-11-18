@@ -1,12 +1,48 @@
 # app.py
 from flask import Flask, render_template, request, session, redirect, url_for
+from flask_cors import CORS
 from datetime import datetime
 from honban import QuizGenerator
 import os
-from flask import send_from_directory
+import logging
+
+# Import database and API routes
+from db import init_db_pool, close_db_pool
+from api_routes import api
+from middleware.security import setup_security_headers
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key')
+
+# Setup CORS
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+# Setup security headers
+setup_security_headers(app)
+
+# Register API blueprint
+app.register_blueprint(api)
+
+# Initialize database connection pool
+try:
+    init_db_pool()
+    logger.info("Database connection pool initialized")
+except Exception as e:
+    logger.warning(f"Database initialization failed: {e}. Some features may be unavailable.")
+
+@app.teardown_appcontext
+def shutdown_db_pool(exception=None):
+    """Close database pool on app shutdown"""
+    if exception:
+        logger.error(f"App context teardown with exception: {exception}")
+    close_db_pool()
 
 # QuizGeneratorのインスタンスを作成（環境変数からAPIキーを取得）
 api_key = os.environ.get('GEMINI_API_KEY')

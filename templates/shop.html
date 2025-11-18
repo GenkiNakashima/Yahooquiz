@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>アイコンショップ - Yahooquiz</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            margin: 0;
+            color: #333;
+        }
+        .points {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .nav {
+            display: flex;
+            gap: 10px;
+        }
+        .nav button {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .nav button:hover {
+            background: #45a049;
+        }
+        .icons-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .icon-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .icon-emoji {
+            font-size: 64px;
+            margin: 20px 0;
+        }
+        .icon-card h3 {
+            margin: 10px 0;
+            color: #333;
+        }
+        .icon-card p {
+            color: #777;
+            font-size: 14px;
+        }
+        .icon-price {
+            font-size: 20px;
+            font-weight: bold;
+            color: #4CAF50;
+            margin: 10px 0;
+        }
+        .buy-btn {
+            width: 100%;
+            padding: 10px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .buy-btn:hover {
+            background: #45a049;
+        }
+        .buy-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        .badge.limited {
+            background: #ff9800;
+            color: white;
+        }
+        .badge.owned {
+            background: #4CAF50;
+            color: white;
+        }
+        .badge.sold-out {
+            background: #f44336;
+            color: white;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #777;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal.show {
+            display: flex;
+        }
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 400px;
+            text-align: center;
+        }
+        .modal-content button {
+            margin: 10px 5px;
+            padding: 10px 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>アイコンショップ</h1>
+                <p class="points">所持ポイント: <span id="userPoints">0</span></p>
+            </div>
+            <div class="nav">
+                <button onclick="location.href='/dashboard'">ダッシュボード</button>
+                <button onclick="location.href='/'">ゲーム</button>
+                <button onclick="location.href='/leaderboard'">ランキング</button>
+            </div>
+        </div>
+
+        <div id="iconsGrid" class="icons-grid">
+            <div class="loading">アイコンを読み込み中...</div>
+        </div>
+    </div>
+
+    <!-- Purchase Confirmation Modal -->
+    <div id="purchaseModal" class="modal">
+        <div class="modal-content">
+            <h2>購入確認</h2>
+            <p id="modalMessage"></p>
+            <div>
+                <button id="confirmBtn" class="buy-btn" style="width: auto;">購入する</button>
+                <button onclick="closePurchaseModal()" style="background: #666;">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/javascript/api.js"></script>
+    <script>
+        const accessToken = localStorage.getItem('access_token');
+        if (!accessToken) {
+            window.location.href = '/login';
+        }
+
+        let currentUserPoints = 0;
+        let selectedIcon = null;
+
+        const iconEmojis = {
+            'bronze_badge': '🥉',
+            'silver_badge': '🥈',
+            'gold_badge': '🥇',
+            'platinum_badge': '💎',
+            'diamond_badge': '💠',
+            'quiz_master': '👑'
+        };
+
+        async function loadUserPoints() {
+            try {
+                const response = await fetch('/api/users/me', {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const user = await response.json();
+                    currentUserPoints = user.points;
+                    document.getElementById('userPoints').textContent = currentUserPoints.toLocaleString();
+                } else if (response.status === 401) {
+                    localStorage.removeItem('access_token');
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.error('Error loading user points:', error);
+            }
+        }
+
+        async function loadIcons() {
+            try {
+                const response = await fetch('/api/icons');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    renderIcons(data.icons);
+                }
+            } catch (error) {
+                console.error('Error loading icons:', error);
+            }
+        }
+
+        async function loadUserIcons() {
+            try {
+                const response = await fetch('/api/users/me/icons', {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.icons.map(icon => icon.id);
+                }
+            } catch (error) {
+                console.error('Error loading user icons:', error);
+            }
+            return [];
+        }
+
+        async function renderIcons(icons) {
+            const userIconIds = await loadUserIcons();
+            const iconsGrid = document.getElementById('iconsGrid');
+
+            if (icons && icons.length > 0) {
+                iconsGrid.innerHTML = icons.map(icon => {
+                    const owned = userIconIds.includes(icon.id);
+                    const soldOut = icon.is_limited && !icon.available;
+                    const canBuy = !owned && !soldOut && currentUserPoints >= icon.price;
+
+                    return `
+                        <div class="icon-card">
+                            <div class="icon-emoji">${iconEmojis[icon.name] || '🎯'}</div>
+                            <h3>${icon.description || icon.name}</h3>
+                            <p class="icon-price">${icon.price.toLocaleString()} ポイント</p>
+                            ${icon.is_limited ? `<span class="badge limited">限定 ${icon.purchased_count}/${icon.total_supply}</span>` : ''}
+                            ${owned ? '<span class="badge owned">所持中</span>' : ''}
+                            ${soldOut ? '<span class="badge sold-out">売り切れ</span>' : ''}
+                            <br><br>
+                            <button class="buy-btn"
+                                    ${!canBuy ? 'disabled' : ''}
+                                    onclick='showPurchaseModal(${JSON.stringify(icon)})'>
+                                ${owned ? '所持済み' : (soldOut ? '売り切れ' : '購入する')}
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                iconsGrid.innerHTML = '<p class="loading">アイコンがありません</p>';
+            }
+        }
+
+        function showPurchaseModal(icon) {
+            selectedIcon = icon;
+            const modal = document.getElementById('purchaseModal');
+            const message = document.getElementById('modalMessage');
+
+            message.innerHTML = `
+                <p><strong>${icon.description || icon.name}</strong>を</p>
+                <p><strong>${icon.price.toLocaleString()}</strong> ポイントで購入しますか？</p>
+                <p>購入後の残りポイント: <strong>${(currentUserPoints - icon.price).toLocaleString()}</strong></p>
+            `;
+
+            modal.classList.add('show');
+        }
+
+        function closePurchaseModal() {
+            document.getElementById('purchaseModal').classList.remove('show');
+            selectedIcon = null;
+        }
+
+        document.getElementById('confirmBtn').addEventListener('click', async () => {
+            if (!selectedIcon) return;
+
+            try {
+                const response = await fetch(`/api/icons/${selectedIcon.id}/purchase`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert('購入成功！アイコンを取得しました。');
+                    closePurchaseModal();
+                    // Reload data
+                    await loadUserPoints();
+                    await loadIcons();
+                } else {
+                    alert(`購入失敗: ${data.error || '不明なエラー'}`);
+                }
+            } catch (error) {
+                alert('ネットワークエラーが発生しました');
+                console.error('Error purchasing icon:', error);
+            }
+        });
+
+        // Load initial data
+        loadUserPoints();
+        loadIcons();
+    </script>
+</body>
+</html>

@@ -62,6 +62,31 @@ def index():
    """トップページ"""
    return render_template('index.html')
 
+@app.route('/login')
+def login():
+   """ログインページ"""
+   return render_template('login.html')
+
+@app.route('/register')
+def register():
+   """ユーザー登録ページ"""
+   return render_template('register.html')
+
+@app.route('/dashboard')
+def dashboard():
+   """ユーザーダッシュボード"""
+   return render_template('dashboard.html')
+
+@app.route('/shop')
+def shop():
+   """アイコンショップ"""
+   return render_template('shop.html')
+
+@app.route('/leaderboard')
+def leaderboard():
+   """ランキング"""
+   return render_template('leaderboard.html')
+
 @app.route('/game', methods=['GET', 'POST'])
 def game():
    """ゲーム開始ページ"""

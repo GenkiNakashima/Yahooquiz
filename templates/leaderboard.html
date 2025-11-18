@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ランキング - Yahooquiz</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .nav {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .nav button {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .nav button:hover {
+            background: #45a049;
+        }
+        .leaderboard {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .leaderboard-item {
+            display: grid;
+            grid-template-columns: 60px 1fr 100px 100px 100px;
+            gap: 10px;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            align-items: center;
+        }
+        .leaderboard-item:last-child {
+            border-bottom: none;
+        }
+        .leaderboard-item.top1 {
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: white;
+        }
+        .leaderboard-item.top2 {
+            background: linear-gradient(135deg, #C0C0C0 0%, #A8A8A8 100%);
+            color: white;
+        }
+        .leaderboard-item.top3 {
+            background: linear-gradient(135deg, #CD7F32 0%, #B8860B 100%);
+            color: white;
+        }
+        .rank {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .user-name {
+            font-weight: bold;
+        }
+        .stat {
+            text-align: center;
+            font-size: 14px;
+        }
+        .stat-label {
+            font-size: 11px;
+            opacity: 0.8;
+            display: block;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏆 ランキング</h1>
+            <p>トッププレイヤー一覧</p>
+            <div class="nav">
+                <button onclick="location.href='/dashboard'">ダッシュボード</button>
+                <button onclick="location.href='/'">ゲーム</button>
+                <button onclick="location.href='/shop'">ショップ</button>
+            </div>
+        </div>
+
+        <div id="leaderboard" class="leaderboard">
+            <div class="loading">ランキングを読み込み中...</div>
+        </div>
+    </div>
+
+    <script src="/static/javascript/api.js"></script>
+    <script>
+        const rankEmojis = {
+            1: '🥇',
+            2: '🥈',
+            3: '🥉'
+        };
+
+        async function loadLeaderboard() {
+            try {
+                const response = await fetch('/api/leaderboard');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    renderLeaderboard(data.leaderboard);
+                } else {
+                    document.getElementById('leaderboard').innerHTML =
+                        '<div class="loading">ランキングの取得に失敗しました</div>';
+                }
+            } catch (error) {
+                console.error('Error loading leaderboard:', error);
+                document.getElementById('leaderboard').innerHTML =
+                    '<div class="loading">ネットワークエラーが発生しました</div>';
+            }
+        }
+
+        function renderLeaderboard(leaderboard) {
+            const leaderboardDiv = document.getElementById('leaderboard');
+
+            if (leaderboard && leaderboard.length > 0) {
+                leaderboardDiv.innerHTML = leaderboard.map(player => {
+                    const rankClass = player.rank <= 3 ? `top${player.rank}` : '';
+                    const rankDisplay = rankEmojis[player.rank] || `#${player.rank}`;
+
+                    return `
+                        <div class="leaderboard-item ${rankClass}">
+                            <div class="rank">${rankDisplay}</div>
+                            <div class="user-name">${player.display_name}</div>
+                            <div class="stat">
+                                <span class="stat-label">ポイント</span>
+                                ${player.points.toLocaleString()}
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">対戦数</span>
+                                ${player.total_matches}
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">勝率</span>
+                                ${player.win_rate}%
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                leaderboardDiv.innerHTML = '<div class="loading">まだランキングデータがありません</div>';
+            }
+        }
+
+        // Load leaderboard on page load
+        loadLeaderboard();
+
+        // Refresh every 30 seconds
+        setInterval(loadLeaderboard, 30000);
+    </script>
+</body>
+</html>

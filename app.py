@@ -5,6 +5,10 @@ from datetime import datetime
 from honban import QuizGenerator
 import os
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import database and API routes
 from db import init_db_pool, close_db_pool
@@ -37,17 +41,14 @@ try:
 except Exception as e:
     logger.warning(f"Database initialization failed: {e}. Some features may be unavailable.")
 
-@app.teardown_appcontext
-def shutdown_db_pool(exception=None):
-    """Close database pool on app shutdown"""
-    if exception:
-        logger.error(f"App context teardown with exception: {exception}")
-    close_db_pool()
+# Register cleanup function to close pool on app shutdown
+import atexit
+atexit.register(close_db_pool)
 
 # QuizGeneratorのインスタンスを作成（環境変数からAPIキーを取得）
-api_key = os.environ.get('GEMINI_API_KEY')
+api_key = os.environ.get('GROQ_API_KEY')
 if not api_key:
-    raise ValueError("GEMINI_API_KEY environment variable is required")
+    raise ValueError("GROQ_API_KEY environment variable is required")
 
 quiz_generator = QuizGenerator(api_key=api_key)
 

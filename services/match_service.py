@@ -1,6 +1,7 @@
 # services/match_service.py
 from datetime import datetime
 from db import get_db_connection
+from psycopg2.extras import Json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ def create_match(match_type, players, metadata=None):
                     INSERT INTO matches (match_type, metadata, finished_at)
                     VALUES (%s, %s, %s)
                     RETURNING id, created_at
-                """, (match_type, metadata, datetime.utcnow()))
+                """, (match_type, Json(metadata) if metadata else None, datetime.utcnow()))
 
                 match = cur.fetchone()
                 match_id = match['id']

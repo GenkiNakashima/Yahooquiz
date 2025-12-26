@@ -114,5 +114,8 @@ def close_db_pool():
     """Close all connections in the pool"""
     global connection_pool
     if connection_pool:
-        connection_pool.closeall()
-        logger.info("Database connection pool closed")
+        try:
+            connection_pool.closeall()
+            logger.info("Database connection pool closed")
+        except Exception as e:
+            logger.debug(f"Error closing connection pool (may already be closed): {e}")

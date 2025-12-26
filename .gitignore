@@ -38,6 +38,12 @@ ENV/
 .env
 .env.local
 .env.*.local
+.env.docker
+.env.docker-host
+.env.production
+.env.development
+.env.test
+*.env
 
 # Database
 *.db

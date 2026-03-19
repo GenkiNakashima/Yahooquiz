@@ -1,17 +1,54 @@
 # app.py
 from flask import Flask, render_template, request, session, redirect, url_for
+from flask_cors import CORS
 from datetime import datetime
 from honban import QuizGenerator
 import os
-from flask import send_from_directory
+import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Import database and API routes
+from db import init_db_pool, close_db_pool
+from api_routes import api
+from middleware.security import setup_security_headers
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key')
 
+# Setup CORS
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+# Setup security headers
+setup_security_headers(app)
+
+# Register API blueprint
+app.register_blueprint(api)
+
+# Initialize database connection pool
+try:
+    init_db_pool()
+    logger.info("Database connection pool initialized")
+except Exception as e:
+    logger.warning(f"Database initialization failed: {e}. Some features may be unavailable.")
+
+# Register cleanup function to close pool on app shutdown
+import atexit
+atexit.register(close_db_pool)
+
 # QuizGeneratorのインスタンスを作成（環境変数からAPIキーを取得）
-api_key = os.environ.get('GEMINI_API_KEY')
+api_key = os.environ.get('GROQ_API_KEY')
 if not api_key:
-    raise ValueError("GEMINI_API_KEY environment variable is required")
+    raise ValueError("GROQ_API_KEY environment variable is required")
 
 quiz_generator = QuizGenerator(api_key=api_key)
 
@@ -25,6 +62,31 @@ def favicon():
 def index():
    """トップページ"""
    return render_template('index.html')
+
+@app.route('/login')
+def login():
+   """ログインページ"""
+   return render_template('login.html')
+
+@app.route('/register')
+def register():
+   """ユーザー登録ページ"""
+   return render_template('register.html')
+
+@app.route('/dashboard')
+def dashboard():
+   """ユーザーダッシュボード"""
+   return render_template('dashboard.html')
+
+@app.route('/shop')
+def shop():
+   """アイコンショップ"""
+   return render_template('shop.html')
+
+@app.route('/leaderboard')
+def leaderboard():
+   """ランキング"""
+   return render_template('leaderboard.html')
 
 @app.route('/game', methods=['GET', 'POST'])
 def game():

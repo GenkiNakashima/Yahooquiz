@@ -4,11 +4,48 @@
 <head>
    <title>JAIJAI - AI早押しクイズ対決</title>
    <link rel="stylesheet" href="static/css/style.css">
+   <style>
+       .auth-menu {
+           position: fixed;
+           top: 20px;
+           right: 20px;
+           display: flex;
+           gap: 10px;
+           z-index: 100;
+       }
+       .auth-menu button, .auth-menu a {
+           padding: 10px 20px;
+           background: #4CAF50;
+           color: white;
+           text-decoration: none;
+           border: none;
+           border-radius: 5px;
+           cursor: pointer;
+       }
+       .auth-menu button:hover, .auth-menu a:hover {
+           background: #45a049;
+       }
+       .user-info {
+           background: white;
+           padding: 8px 15px;
+           border-radius: 5px;
+           color: #333;
+           display: flex;
+           align-items: center;
+           gap: 10px;
+       }
+       .user-points {
+           color: #4CAF50;
+           font-weight: bold;
+       }
+   </style>
 </head>
 <body>
-   
+   <!-- Auth Menu -->
+   <div class="auth-menu" id="authMenu"></div>
+
    <div class="floating-icons">
-       
+
        <span class="icon" style="top: 20%; right: 15%;">○</span>
        <span class="icon" style="bottom: 30%; left: 20%;">+</span>
        <span class="icon" style="bottom: 20%; right: 25%;">↗</span>
@@ -32,5 +69,64 @@
 
        <a href="/game" class="start-button">ゲームスタート</a>
    </div>
+
+   <script src="/static/javascript/api.js"></script>
+   <script>
+       // Display auth menu based on login status
+       const authMenu = document.getElementById('authMenu');
+       const accessToken = localStorage.getItem('access_token');
+
+       if (accessToken) {
+           // User is logged in
+           // Try to fetch user data
+           fetch('/api/users/me', {
+               headers: {
+                   'Authorization': `Bearer ${accessToken}`
+               }
+           })
+           .then(response => {
+               if (response.ok) {
+                   return response.json();
+               } else {
+                   // Token invalid, clear storage
+                   localStorage.removeItem('access_token');
+                   localStorage.removeItem('user');
+                   throw new Error('Invalid token');
+               }
+           })
+           .then(user => {
+               authMenu.innerHTML = `
+                   <div class="user-info">
+                       <span>${user.display_name || 'ゲスト'}</span>
+                       <span class="user-points">${user.points} pt</span>
+                   </div>
+                   <a href="/dashboard">ダッシュボード</a>
+                   <a href="/shop">ショップ</a>
+                   <a href="/leaderboard">ランキング</a>
+                   <button onclick="logout()">ログアウト</button>
+               `;
+           })
+           .catch(() => {
+               // Show login/register buttons
+               showGuestMenu();
+           });
+       } else {
+           // User is not logged in
+           showGuestMenu();
+       }
+
+       function showGuestMenu() {
+           authMenu.innerHTML = `
+               <a href="/login">ログイン</a>
+               <a href="/register">新規登録</a>
+           `;
+       }
+
+       function logout() {
+           localStorage.removeItem('access_token');
+           localStorage.removeItem('user');
+           location.reload();
+       }
+   </script>
 </body>
 </html>

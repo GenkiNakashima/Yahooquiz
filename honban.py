@@ -1,5 +1,5 @@
 # quiz_generator.py
-import google.generativeai as genai
+from groq import Groq
 import random
 import requests
 from bs4 import BeautifulSoup
@@ -34,29 +34,25 @@ class QuizGenerator:
                 }
             }
         }
-        genai.configure(api_key=self.api_key)
-        
-        # 複数のモデル名を試す
-        model_names = [
-            'models/gemini-1.5-flash',
-            'models/gemini-1.5-pro', 
-            'gemini-1.5-flash',
-            'gemini-1.5-pro',
-            'gemini-pro'
-        ]
-        
-        self.model = None
-        for model_name in model_names:
-            try:
-                self.model = genai.GenerativeModel(model_name)
-                print(f"成功: モデル '{model_name}' を使用します")
-                break
-            except Exception as e:
-                print(f"モデル '{model_name}' の初期化に失敗: {e}")
-                continue
-        
-        if self.model is None:
-            raise Exception("利用可能なGeminiモデルが見つかりませんでした")
+        # 利用可能なGroqモデル（無料枠で使用可能）
+        # llama-3.3-70b-versatile: 高性能で汎用的なモデル
+        # mixtral-8x7b-32768: 大きなコンテキストウィンドウ
+        # llama-3.1-8b-instant: 高速で軽量
+        self.model_name = "llama-3.3-70b-versatile"
+
+        # Groqクライアントの初期化
+        try:
+            self.client = Groq(api_key=self.api_key)
+            # モデルの動作確認
+            test_response = self.client.chat.completions.create(
+                messages=[{"role": "user", "content": "test"}],
+                model=self.model_name,
+                max_tokens=10
+            )
+            print(f"成功: Groqモデル '{self.model_name}' を使用します")
+        except Exception as e:
+            print(f"Groqモデルの初期化エラー: {e}")
+            raise Exception(f"利用可能なGroqモデルが見つかりませんでした: {e}")
 
     def simulate_ai_buzzer(self, level='normal'):
         """AIの早押し判定をレベルに応じてシミュレート"""
@@ -171,34 +167,50 @@ Explanation: （ここに解説）
 文章:
 {text}
 """
-            response = self.model.generate_content(prompt)
-            
-            if response.text:
-                lines = response.text.split('\n')
+            # GroqのChat Completions APIを使用
+            response = self.client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "あなたは日本語でクイズを作成する専門家です。指定されたフォーマットに厳密に従ってクイズを生成してください。"
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                model=self.model_name,
+                max_tokens=500,
+                temperature=0.7
+            )
+
+            if response.choices and len(response.choices) > 0:
+                response_text = response.choices[0].message.content
+                lines = response_text.split('\n')
                 quiz_data = {}
-                
+
                 for line in lines:
                     line = line.strip()
-                    if line.startswith('Question:'):
-                        quiz_data['question'] = line.replace('Question:', '').strip()
-                    elif line.startswith('Answer:'):
-                        quiz_data['answer'] = line.replace('Answer:', '').strip()
-                    elif line.startswith('Explanation:'):
-                        quiz_data['explanation'] = line.replace('Explanation:', '').strip()
-                
+                    if line.startswith('Question:') or line.startswith('問題:'):
+                        quiz_data['question'] = line.replace('Question:', '').replace('問題:', '').strip()
+                    elif line.startswith('Answer:') or line.startswith('答え:') or line.startswith('回答:'):
+                        quiz_data['answer'] = line.replace('Answer:', '').replace('答え:', '').replace('回答:', '').strip()
+                    elif line.startswith('Explanation:') or line.startswith('解説:'):
+                        quiz_data['explanation'] = line.replace('Explanation:', '').replace('解説:', '').strip()
+
                 # 必要なフィールドが全て揃っているかチェック
                 if all(key in quiz_data for key in ['question', 'answer', 'explanation']):
                     return quiz_data
                 else:
                     print(f"クイズデータ不完全: {quiz_data}")
                     return None
-                
+
             return None
         except Exception as e:
-            # 429レート制限時のフォールバック（簡易問題を返す）
+            # レート制限時のフォールバック（簡易問題を返す）
             err_text = str(e)
             print(f"クイズ生成エラー: {err_text}")
-            if '429' in err_text or 'RATE_LIMIT' in err_text or 'RATE_LIMIT_EXCEEDED' in err_text:
+            if '429' in err_text or 'RATE_LIMIT' in err_text or 'rate_limit' in err_text.lower():
                 # テキストから簡易的に固有名詞らしき語を抽出（非常に単純なフォールバック）
                 keywords = [w for w in text.split() if len(w) >= 2]
                 fallback_answer = (keywords[0][:12] if keywords else 'ニュース')

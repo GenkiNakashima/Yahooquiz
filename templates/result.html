@@ -3,10 +3,54 @@
 <head>
     <title>結果発表 - AI早押しクイズ対決</title>
     <link rel="stylesheet" href="static/css/style.css">
+    <style>
+        .auth-menu {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+        .auth-menu button, .auth-menu a {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .auth-menu button:hover, .auth-menu a:hover {
+            background: #45a049;
+        }
+        .user-info {
+            background: white;
+            padding: 8px 15px;
+            border-radius: 5px;
+            color: #333;
+            font-size: 14px;
+        }
+        .points-earned {
+            background: #4CAF50;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+        }
+    </style>
 </head>
 <body>
+    <!-- Auth Menu -->
+    <div class="auth-menu" id="authMenu"></div>
+
     <div class="container">
         <h1>結果発表</h1>
+        <div id="pointsMessage" class="points-earned" style="display:none;"></div>
         <div class="score-board">
             <div class="player-score">
                 <h2>あなたのスコア</h2>
@@ -33,5 +77,100 @@
         
         <a href="/" class="retry-button">もう一度チャレンジ</a>
     </div>
+
+    <script src="/static/javascript/api.js"></script>
+    <script>
+        // Display auth menu
+        const authMenu = document.getElementById('authMenu');
+        const accessToken = localStorage.getItem('access_token');
+
+        if (accessToken) {
+            // User is logged in - submit match result
+            submitMatchResult();
+
+            authMenu.innerHTML = `
+                <a href="/dashboard">ダッシュボード</a>
+                <a href="/shop">ショップ</a>
+                <a href="/leaderboard">ランキング</a>
+            `;
+        } else {
+            authMenu.innerHTML = `
+                <div class="user-info">ログインして対戦結果を記録しよう！</div>
+                <a href="/login">ログイン</a>
+                <a href="/register">新規登録</a>
+            `;
+        }
+
+        async function submitMatchResult() {
+            const playerScore = {{ player_score }};
+            const aiScore = {{ ai_score }};
+            const aiLevel = "{{ ai_level }}";
+
+            // Determine winner
+            const playerWon = playerScore > aiScore;
+
+            try {
+                // Generate a temporary AI user ID (in production, this should come from the backend)
+                const tempAiUserId = '00000000-0000-0000-0000-000000000000';
+
+                // Get current user ID
+                const userResponse = await fetch('/api/users/me', {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+
+                if (!userResponse.ok) {
+                    console.error('Failed to get user info');
+                    return;
+                }
+
+                const userData = await userResponse.json();
+                const userId = userData.id;
+
+                // Submit match result
+                const matchData = {
+                    match_type: '1v1_ai',
+                    players: [
+                        {
+                            user_id: userId,
+                            score: playerScore,
+                            is_winner: playerWon
+                        }
+                    ],
+                    metadata: {
+                        ai_level: aiLevel,
+                        ai_score: aiScore,
+                        quiz_type: 'news'
+                    }
+                };
+
+                const response = await fetch('/api/matches', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(matchData)
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+
+                    if (playerWon && data.points_awarded) {
+                        const pointsMessage = document.getElementById('pointsMessage');
+                        pointsMessage.textContent = `🎉 ${data.points_awarded}ポイント獲得！`;
+                        pointsMessage.style.display = 'block';
+                    }
+
+                    console.log('Match result submitted successfully');
+                } else {
+                    console.error('Failed to submit match result');
+                }
+            } catch (error) {
+                console.error('Error submitting match result:', error);
+            }
+        }
+    </script>
 </body>
 </html>

@@ -8,7 +8,8 @@ PostgreSQLとアプリケーションを両方Dockerで起動します。
 
 1. **環境変数の設定**
    ```bash
-   # .env.dockerファイルを編集して、実際のAPIキーを設定
+   cp .env.docker.example .env.docker
+   # .env.docker を編集して CEREBRAS_API_KEY / OPENROUTER_API_KEY / OPENROUTER_MODELS などを設定
    ```
 
 2. **起動**
@@ -84,7 +85,7 @@ PostgreSQLとアプリケーションを両方Dockerで起動します。
 docker-compose config
 
 # または個別に確認
-docker run --env-file .env.docker yahooquiz-app env | grep GROQ_API_KEY
+docker run --env-file .env.docker yahooquiz-app env | grep -E '^(CEREBRAS|OPENROUTER|LLM)_' | sed 's/_API_KEY=.*/_API_KEY=(設定済み)/'
 ```
 
 ### マイグレーションエラー
@@ -111,5 +112,6 @@ docker-compose exec app python migrations/init_db.py
      --platform managed \
      --region asia-northeast1 \
      --allow-unauthenticated \
-     --set-env-vars DATABASE_URL=YOUR_DB_URL,GROQ_API_KEY=YOUR_KEY,JWT_SECRET_KEY=YOUR_SECRET
+     --set-env-vars '^@^DATABASE_URL=YOUR_DB_URL@JWT_SECRET_KEY=YOUR_SECRET@CEREBRAS_API_KEY=YOUR_CEREBRAS_KEY@CEREBRAS_BASE_URL=https://api.cerebras.ai/v1@CEREBRAS_MODEL=qwen-3.8-27b@OPENROUTER_API_KEY=YOUR_OPENROUTER_KEY@OPENROUTER_BASE_URL=https://openrouter.ai/api/v1@OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free'
    ```
+   ※ `OPENROUTER_MODELS` の値にカンマを含むため、`^@^` で区切り文字を `@` に変更しています。

@@ -26,7 +26,15 @@ steps:
       - 'managed'
       - '--allow-unauthenticated'
       - '--set-env-vars'
-      - 'GEMINI_API_KEY=${_GEMINI_API_KEY},DATABASE_URL=${_DATABASE_URL},JWT_SECRET_KEY=${_JWT_SECRET_KEY}'
+      # OPENROUTER_MODELS はカンマ区切りのため、^@^ で区切り文字を @ に変更している
+      - '^@^DATABASE_URL=${_DATABASE_URL}@JWT_SECRET_KEY=${_JWT_SECRET_KEY}@CEREBRAS_API_KEY=${_CEREBRAS_API_KEY}@CEREBRAS_BASE_URL=${_CEREBRAS_BASE_URL}@CEREBRAS_MODEL=${_CEREBRAS_MODEL}@OPENROUTER_API_KEY=${_OPENROUTER_API_KEY}@OPENROUTER_BASE_URL=${_OPENROUTER_BASE_URL}@OPENROUTER_MODELS=${_OPENROUTER_MODELS}@LLM_TIMEOUT_SECONDS=${_LLM_TIMEOUT_SECONDS}'
+
+# 既定値（gcloud builds submit --substitutions=... で上書き可能）
+substitutions:
+  _CEREBRAS_BASE_URL: 'https://api.cerebras.ai/v1'
+  _CEREBRAS_MODEL: 'qwen-3.8-27b'
+  _OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1'
+  _LLM_TIMEOUT_SECONDS: '30'
 
 images:
   - 'gcr.io/$PROJECT_ID/yahooquiz:$COMMIT_SHA'

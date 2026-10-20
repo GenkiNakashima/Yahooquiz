@@ -1,8 +1,9 @@
 # quiz_generator.py
-from groq import Groq
 import random
 import requests
 from bs4 import BeautifulSoup
+
+import llm_client
 
 GENRE_URLS = {
     'top-picks': 'https://news.yahoo.co.jp/topics/top-picks',
@@ -17,8 +18,7 @@ GENRE_URLS = {
 }
 
 class QuizGenerator:
-    def __init__(self, api_key):
-        self.api_key = api_key
+    def __init__(self):
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
@@ -45,24 +45,6 @@ class QuizGenerator:
                 }
             }
         }
-        # 利用可能なGroqモデル（無料枠で使用可能）
-        # llama-3.3-70b-versatile: 高性能で汎用的なモデル
-        # mixtral-8x7b-32768: 大きなコンテキストウィンドウ
-        # llama-3.1-8b-instant: 高速で軽量
-        self.model_name = "llama-3.3-70b-versatile"
-
-        # Groqクライアントの初期化
-        try:
-            self.client = Groq(api_key=self.api_key)
-            self.client.chat.completions.create(
-                messages=[{"role": "user", "content": "test"}],
-                model=self.model_name,
-                max_tokens=10
-            )
-            print(f"成功: Groqモデル '{self.model_name}' を使用します")
-        except Exception as e:
-            print(f"Groqモデルの初期化エラー: {e}")
-            raise Exception(f"利用可能なGroqモデルが見つかりませんでした: {e}")
 
     def simulate_ai_buzzer(self, level='normal'):
         """AIの早押し判定をレベルに応じてシミュレート"""
@@ -221,89 +203,22 @@ class QuizGenerator:
             return random.choice(sample_articles)
 
     def generate_quiz(self, text):
-        """AIによるクイズ生成"""
-        try:
-            prompt = f"""
-以下の文章から時事ネタのクイズを作成してください。
-1単語または短い語句で答えられる問題にしてください。
-以下のフォーマットで出力してください：
-
-Question: （ここに問題文）
-Answer: （ここに1単語または短い語句で答え）
-Explanation: （ここに解説）
-
-文章:
-{text}
-"""
-            # GroqのChat Completions APIを使用
-            response = self.client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "あなたは日本語でクイズを作成する専門家です。指定されたフォーマットに厳密に従ってクイズを生成してください。"
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                model=self.model_name,
-                max_tokens=500,
-                temperature=0.7
-            )
-
-            if response.choices and len(response.choices) > 0:
-                response_text = response.choices[0].message.content
-                lines = response_text.split('\n')
-                quiz_data = {}
-
-                for line in lines:
-                    line = line.strip()
-                    if line.startswith('Question:') or line.startswith('問題:'):
-                        quiz_data['question'] = line.replace('Question:', '').replace('問題:', '').strip()
-                    elif line.startswith('Answer:') or line.startswith('答え:') or line.startswith('回答:'):
-                        quiz_data['answer'] = line.replace('Answer:', '').replace('答え:', '').replace('回答:', '').strip()
-                    elif line.startswith('Explanation:') or line.startswith('解説:'):
-                        quiz_data['explanation'] = line.replace('Explanation:', '').replace('解説:', '').strip()
-
-                # 必要なフィールドが全て揃っているかチェック
-                if all(key in quiz_data for key in ['question', 'answer', 'explanation']):
-                    return quiz_data
-                else:
-                    print(f"クイズデータ不完全: {quiz_data}")
-                    return None
-
-            return None
-        except Exception as e:
-            # レート制限時のフォールバック（簡易問題を返す）
-            err_text = str(e)
-            print(f"クイズ生成エラー: {err_text}")
-            if '429' in err_text or 'RATE_LIMIT' in err_text or 'rate_limit' in err_text.lower():
-                # テキストから簡易的に固有名詞らしき語を抽出（非常に単純なフォールバック）
-                keywords = [w for w in text.split() if len(w) >= 2]
-                fallback_answer = (keywords[0][:12] if keywords else 'ニュース')
-                fallback_question = '本文のキーワードは何？'
-                fallback_explanation = 'レート制限のため簡易問題を表示しています。'
-                return {
-                    'question': fallback_question,
-                    'answer': fallback_answer,
-                    'explanation': fallback_explanation
-                }
-            return None
+        """
+        AIによるクイズ生成（LLM 呼び出しは llm_client に委譲）。
+        生成できない場合は llm_client.QuizGenerationError をそのまま送出する。
+        """
+        return llm_client.generate_quiz(text)
 
     def create_quiz(self, genre='business'):
-        """記事取得からクイズ生成までの一連の処理"""
-        try:
-            article_data = self.get_news_article(genre)
-            if article_data:
-                quiz_data = self.generate_quiz(article_data['content'])
-                if quiz_data:
-                    # クイズデータに記事情報を追加
-                    quiz_data['article_content'] = article_data['content']
-                    quiz_data['article_url'] = article_data['url']
-                    quiz_data['article_title'] = article_data['title']
-                    return quiz_data
-            return None
-        except Exception as e:
-            print(f"クイズ作成エラー: {e}")
-            return None
+        """
+        記事取得からクイズ生成までの一連の処理。
+        記事取得は内部でサンプル記事にフォールバックするため、失敗時に送出されるのは
+        llm_client.QuizGenerationError のみ。
+        """
+        article_data = self.get_news_article(genre)
+        quiz_data = self.generate_quiz(article_data['content'])
+        # クイズデータに記事情報を追加
+        quiz_data['article_content'] = article_data['content']
+        quiz_data['article_url'] = article_data['url']
+        quiz_data['article_title'] = article_data['title']
+        return quiz_data

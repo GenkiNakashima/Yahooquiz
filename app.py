@@ -3,6 +3,8 @@ from flask import Flask, render_template, request, session, redirect, url_for, s
 from flask_cors import CORS
 from datetime import datetime
 from honban import QuizGenerator
+import llm_client
+from llm_client import QuizGenerationError
 import os
 import logging
 from dotenv import load_dotenv
@@ -72,12 +74,16 @@ seed_icons_if_empty()
 import atexit
 atexit.register(close_db_pool)
 
-# QuizGeneratorのインスタンスを作成（環境変数からAPIキーを取得）
-api_key = os.environ.get('GROQ_API_KEY')
-if not api_key:
-    raise ValueError("GROQ_API_KEY environment variable is required")
+# QuizGeneratorのインスタンスを作成（LLM の設定は llm_client が環境変数から読み込む）
+llm_providers = llm_client.configured_providers()
+if not llm_providers:
+    raise ValueError(
+        "LLM が設定されていません。CEREBRAS_API_KEY（+ CEREBRAS_BASE_URL / CEREBRAS_MODEL）または "
+        "OPENROUTER_API_KEY（+ OPENROUTER_BASE_URL / OPENROUTER_MODELS）を設定してください"
+    )
+logger.info(f"利用する LLM プロバイダ（優先順）: {', '.join(llm_providers)}")
 
-quiz_generator = QuizGenerator(api_key=api_key)
+quiz_generator = QuizGenerator()
 
 @app.route('/favicon.ico')
 def favicon():
@@ -151,7 +157,11 @@ def quiz():
     
     if request.method == 'GET':
     # 新しい問題の用意
-        quiz_data = quiz_generator.create_quiz(session.get('genre', 'business'))
+        try:
+            quiz_data = quiz_generator.create_quiz(session.get('genre', 'business'))
+        except QuizGenerationError:
+            return render_template('error.html',
+                                error_message="現在クイズを生成できません。しばらく時間をおいて再度お試しください。"), 503
         if quiz_data:
             session['current_quiz'] = quiz_data
             session['ai_buzzer_time'] = quiz_generator.simulate_ai_buzzer(ai_level)

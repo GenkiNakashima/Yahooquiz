@@ -3,8 +3,6 @@ from groq import Groq
 import random
 import requests
 from bs4 import BeautifulSoup
-import os
-
 class QuizGenerator:
     def __init__(self, api_key):
         self.api_key = api_key
@@ -43,8 +41,7 @@ class QuizGenerator:
         # Groqクライアントの初期化
         try:
             self.client = Groq(api_key=self.api_key)
-            # モデルの動作確認
-            test_response = self.client.chat.completions.create(
+            self.client.chat.completions.create(
                 messages=[{"role": "user", "content": "test"}],
                 model=self.model_name,
                 max_tokens=10
@@ -87,9 +84,25 @@ class QuizGenerator:
         }
         return random.choice(messages[level])
 
+    def _fetch_with_retry(self, url, max_retries=3, timeout=10):
+        """リトライ付きHTTPリクエスト（指数バックオフ）"""
+        import time
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=self.headers, timeout=timeout)
+                response.raise_for_status()
+                return response
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                wait = 2 ** attempt + random.uniform(0.5, 1.5)
+                print(f"リクエスト失敗 (試行{attempt + 1}/{max_retries}): {e} - {wait:.1f}秒後にリトライ")
+                time.sleep(wait)
+
     def get_news_article(self):
-        """サンプル記事を返す（Yahoo!ニュースが利用できない場合のフォールバック）"""
-        # Yahoo!ニュースのスクレイピングが難しい場合のサンプルデータ
+        """Yahoo!ニュースから記事を取得する（失敗時はサンプル記事を使用）"""
+        import time
+
         sample_articles = [
             {
                 'content': '日本銀行は本日、政策金利を0.1%引き上げることを発表しました。これは2年ぶりの利上げとなり、インフレ対策の一環として実施されます。市場関係者からは慎重な反応が見られており、今後の経済動向に注目が集まっています。',
@@ -98,7 +111,7 @@ class QuizGenerator:
             },
             {
                 'content': '東京都は2025年度から新しい環境税を導入することを発表しました。この税制は企業の二酸化炭素排出量に応じて課税され、環境保護の推進を図ります。対象となる企業は約1000社で、年間約500億円の税収を見込んでいます。',
-                'url': 'https://example.com/news2', 
+                'url': 'https://example.com/news2',
                 'title': '東京都が新環境税を導入へ'
             },
             {
@@ -107,47 +120,88 @@ class QuizGenerator:
                 'title': 'トヨタ、EV生産を大幅拡大へ'
             }
         ]
-        
+
         try:
-            # 実際のYahoo!ニュースからの取得を試行
-            url = "https://news.yahoo.co.jp/topics/business"
-            response = requests.get(url, headers=self.headers, timeout=10)
-            response.raise_for_status()
+            # Step1: ニュース一覧ページを取得
+            response = self._fetch_with_retry("https://news.yahoo.co.jp/topics/business")
             soup = BeautifulSoup(response.text, 'html.parser')
-            
+
             news_feed = soup.find('ul', class_='newsFeed_list')
             article_links = news_feed.find_all('a') if news_feed else []
-            
-            if article_links:
-                random_article = random.choice(article_links)
-                article_url = random_article.get('href')
-                
-                article_response = requests.get(article_url, headers=self.headers, timeout=10)
-                article_soup = BeautifulSoup(article_response.text, 'html.parser')
-                
-                full_article_link = article_soup.find('a', {
-                    'class': 'sc-gdv5m1-9 bxbqJP',
-                    'data-ual-gotocontent': 'true'
-                })
-                
-                if full_article_link:
+
+            if not article_links:
+                print("記事リンクが見つかりません、サンプル記事を使用します")
+                return random.choice(sample_articles)
+
+            # 複数の記事候補をシャッフルして順番に試す（最大3件）
+            candidates = random.sample(article_links, min(3, len(article_links)))
+
+            for candidate in candidates:
+                try:
+                    article_url = candidate.get('href')
+                    if not article_url:
+                        continue
+
+                    time.sleep(random.uniform(0.5, 1.5))
+
+                    # Step2: 記事ページを取得
+                    article_response = self._fetch_with_retry(article_url)
+                    article_soup = BeautifulSoup(article_response.text, 'html.parser')
+
+                    full_article_link = article_soup.find('a', {'data-ual-gotocontent': 'true'})
+                    if not full_article_link:
+                        continue
+
                     full_url = full_article_link.get('href')
-                    full_response = requests.get(full_url, headers=self.headers, timeout=10)
+                    if not full_url:
+                        continue
+
+                    time.sleep(random.uniform(0.5, 1.5))
+
+                    # Step3: 全文ページを取得
+                    full_response = self._fetch_with_retry(full_url)
                     full_soup = BeautifulSoup(full_response.text, 'html.parser')
-                    
+
                     article_content = full_soup.find('div', class_='article_body')
-                    if article_content:
-                        content_text = ' '.join([p.text.strip() for p in article_content.find_all(['p', 'h2'])])
-                        return {
-                            'content': content_text[:2000],
-                            'url': full_url,
-                            'title': full_soup.find('h1').text.strip() if full_soup.find('h1') else 'タイトルなし'
-                        }
-            
-            # Yahoo!ニュースからの取得に失敗した場合、サンプル記事を使用
+                    if not article_content:
+                        continue
+
+                    content_text = ' '.join([p.text.strip() for p in article_content.find_all(['p', 'h2'])])
+                    if not content_text.strip():
+                        continue
+
+                    # タイトル取得: <article> > <header> > <h1>
+                    title = None
+                    article_tag = full_soup.find('article')
+                    if article_tag:
+                        header_tag = article_tag.find('header')
+                        if header_tag:
+                            h1_tag = header_tag.find('h1')
+                            if h1_tag:
+                                title = h1_tag.get_text(strip=True)
+
+                    if not title:
+                        og_title = full_soup.find('meta', property='og:title')
+                        if og_title:
+                            title = og_title.get('content', '').strip()
+
+                    if not title:
+                        title = 'タイトルなし'
+
+                    print(f"記事取得成功: {title}")
+                    return {
+                        'content': content_text[:2000],
+                        'url': full_url,
+                        'title': title
+                    }
+
+                except Exception as e:
+                    print(f"記事候補の取得失敗、次の候補へ: {e}")
+                    continue
+
             print("Yahoo!ニュースからの記事取得に失敗、サンプル記事を使用します")
             return random.choice(sample_articles)
-            
+
         except Exception as e:
             print(f"記事取得エラー: {e} - サンプル記事を使用します")
             return random.choice(sample_articles)

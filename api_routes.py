@@ -210,5 +210,5 @@ def api_health():
 
     return jsonify({
         'status': 'healthy' if db_healthy else 'unhealthy',
-        'database': 'connected' if db_healthy else 'disconnected'
+        'database': 'firestore connected' if db_healthy else 'firestore disconnected'
     }), 200 if db_healthy else 503

@@ -115,6 +115,14 @@ def leaderboard():
    """ランキング"""
    return render_template('leaderboard.html')
 
+@app.route('/genre', methods=['GET', 'POST'])
+def genre():
+   """ジャンル選択ページ"""
+   if request.method == 'POST':
+       session['genre'] = request.form.get('genre', 'business')
+       return redirect(url_for('game'))
+   return render_template('genre.html')
+
 @app.route('/game', methods=['GET', 'POST'])
 def game():
    """ゲーム開始ページ"""
@@ -138,7 +146,7 @@ def quiz():
     
     if request.method == 'GET':
     # 新しい問題の用意
-        quiz_data = quiz_generator.create_quiz()
+        quiz_data = quiz_generator.create_quiz(session.get('genre', 'business'))
         if quiz_data:
             session['current_quiz'] = quiz_data
             session['ai_buzzer_time'] = quiz_generator.simulate_ai_buzzer(ai_level)

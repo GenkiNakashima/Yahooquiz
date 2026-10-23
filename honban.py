@@ -3,6 +3,19 @@ from groq import Groq
 import random
 import requests
 from bs4 import BeautifulSoup
+
+GENRE_URLS = {
+    'top-picks': 'https://news.yahoo.co.jp/topics/top-picks',
+    'domestic': 'https://news.yahoo.co.jp/topics/domestic',
+    'world': 'https://news.yahoo.co.jp/topics/world',
+    'business': 'https://news.yahoo.co.jp/topics/business',
+    'entertainment': 'https://news.yahoo.co.jp/topics/entertainment',
+    'sports': 'https://news.yahoo.co.jp/topics/sports',
+    'it': 'https://news.yahoo.co.jp/topics/it',
+    'science': 'https://news.yahoo.co.jp/topics/science',
+    'local': 'https://news.yahoo.co.jp/topics/local',
+}
+
 class QuizGenerator:
     def __init__(self, api_key):
         self.api_key = api_key
@@ -99,7 +112,7 @@ class QuizGenerator:
                 print(f"リクエスト失敗 (試行{attempt + 1}/{max_retries}): {e} - {wait:.1f}秒後にリトライ")
                 time.sleep(wait)
 
-    def get_news_article(self):
+    def get_news_article(self, genre='business'):
         """Yahoo!ニュースから記事を取得する（失敗時はサンプル記事を使用）"""
         import time
 
@@ -123,7 +136,8 @@ class QuizGenerator:
 
         try:
             # Step1: ニュース一覧ページを取得
-            response = self._fetch_with_retry("https://news.yahoo.co.jp/topics/business")
+            url = GENRE_URLS.get(genre, GENRE_URLS['business'])
+            response = self._fetch_with_retry(url)
             soup = BeautifulSoup(response.text, 'html.parser')
 
             news_feed = soup.find('ul', class_='newsFeed_list')
@@ -277,10 +291,10 @@ Explanation: （ここに解説）
                 }
             return None
 
-    def create_quiz(self):
+    def create_quiz(self, genre='business'):
         """記事取得からクイズ生成までの一連の処理"""
         try:
-            article_data = self.get_news_article()
+            article_data = self.get_news_article(genre)
             if article_data:
                 quiz_data = self.generate_quiz(article_data['content'])
                 if quiz_data:

@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, request, session, redirect, url_for
+from flask import Flask, render_template, request, session, redirect, url_for, send_from_directory
 from flask_cors import CORS
 from datetime import datetime
 from honban import QuizGenerator
@@ -81,9 +81,14 @@ quiz_generator = QuizGenerator(api_key=api_key)
 
 @app.route('/favicon.ico')
 def favicon():
-   """ブラウザのfavicon要求に200で応答（404ノイズ抑制）。"""
-   # staticにfaviconが無い場合でも空レスポンスでOK
-   return ('', 200, {'Content-Type': 'image/x-icon'})
+   """ブラウザのfavicon要求にPNGファイルを提供。"""
+   try:
+      return send_from_directory(os.path.join(app.root_path, 'static/images'), 
+                                'aiquiz-favicon.png', 
+                                mimetype='image/png')
+   except:
+      # ファイルが見つからない場合は204 No Contentで応答
+      return ('', 204)
 
 @app.route('/')
 def index():

@@ -134,20 +134,21 @@ def get_leaderboard(limit=100):
             .stream()
         )
 
-        return [
-            {
+        result = []
+        for idx, doc in enumerate(users):
+            data = doc.to_dict()
+            total_matches = data.get('total_matches', 0)
+            wins = data.get('wins', 0)
+            result.append({
                 'rank': idx + 1,
                 'user_id': doc.id,
-                'display_name': doc.get('display_name') or 'Anonymous',
-                'points': doc.get('points', 0),
-                'total_matches': doc.get('total_matches', 0),
-                'wins': doc.get('wins', 0),
-                'win_rate': round(
-                    doc.get('wins', 0) / doc.get('total_matches', 1) * 100, 1
-                ) if doc.get('total_matches', 0) > 0 else 0
-            }
-            for idx, doc in enumerate(users)
-        ]
+                'display_name': data.get('display_name') or 'Anonymous',
+                'points': data.get('points', 0),
+                'total_matches': total_matches,
+                'wins': wins,
+                'win_rate': round(wins / total_matches * 100, 1) if total_matches > 0 else 0
+            })
+        return result
 
     except Exception as e:
         logger.error(f"Error getting leaderboard: {e}")

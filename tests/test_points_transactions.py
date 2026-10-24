@@ -162,7 +162,7 @@ def test_limited_icon_sells_exactly_up_to_supply(db):
 
 
 def test_concurrent_purchases_of_unlimited_icon_by_different_users(db):
-    """通常のアイコンは、別ユーザーどうしの購入が互いを待たない（アイコン側を書き換えない）"""
+    """通常のアイコンは、別ユーザーどうしの同時購入が競合で失敗しない（アイコン側を書き換えない）"""
     icon_id = _icon(db, price=100)
     user_ids = [_user(db, points=1000) for _ in range(5)]
 

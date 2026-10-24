@@ -5,7 +5,7 @@ AIとクイズで対戦するWebアプリケーション（認証・ポイント
 ## 機能
 
 ### クイズ機能
-- Gemini AIを使用したニュース記事からの自動クイズ生成
+- LLM（Cerebras、失敗時は OpenRouter の無料モデルにフォールバック）を使用したニュース記事からの自動クイズ生成
 - AI対戦相手との早押しクイズバトル
 - 3段階の難易度（強い・普通・弱い）
 
@@ -33,7 +33,7 @@ AIとクイズで対戦するWebアプリケーション（認証・ポイント
 - **Container**: Docker
 - **Deployment**: Google Cloud Run
 - **Hosting**: Firebase Hosting (静的ファイル)
-- **AI**: Google Gemini API
+- **AI**: Cerebras（メイン）/ OpenRouter 無料モデル（フォールバック）— いずれも OpenAI 互換 API を `openai` SDK で呼び出し
 
 ## プロジェクト構造
 
@@ -42,7 +42,8 @@ yahooquiz/
 ├── app.py                 # メインアプリケーション
 ├── api_routes.py          # REST APIエンドポイント
 ├── db.py                  # データベース接続管理
-├── honban.py              # クイズ生成ロジック
+├── honban.py              # クイズ生成ロジック（記事取得・AI対戦シミュレーション）
+├── llm_client.py          # LLM 呼び出し（Cerebras → OpenRouter フォールバック、出力検証）
 ├── services/              # ビジネスロジック
 │   ├── auth.py           # 認証サービス
 │   ├── user_service.py   # ユーザー管理
@@ -57,7 +58,9 @@ yahooquiz/
 ├── Dockerfile            # Dockerイメージ定義
 ├── cloudbuild.yaml       # Cloud Build設定
 ├── firebase.json         # Firebase設定
-└── requirements.txt      # Python依存パッケージ
+├── requirements.txt      # Python依存パッケージ
+├── requirements-dev.txt  # 開発・テスト用依存パッケージ
+└── tests/                # テスト（pytest）
 ```
 
 ## API仕様
@@ -145,10 +148,36 @@ cp .env.example .env
 ```
 
 必須の環境変数:
-- `GEMINI_API_KEY`: Google Gemini APIキー
 - `DATABASE_URL`: PostgreSQL接続文字列
 - `JWT_SECRET_KEY`: JWT署名用シークレットキー
 - `SECRET_KEY`: Flask セッション用シークレットキー
+- LLM 設定（下記）: Cerebras と OpenRouter の**少なくとも一方**（両方を推奨）
+
+#### LLM（クイズ生成）の設定
+
+クイズはまず Cerebras で生成し、失敗した場合は OpenRouter の無料モデルにフォールバックします。
+プロバイダ・モデル名はすべて環境変数で指定します（コードには書かれていません）。
+
+| 変数 | 説明 | 例 |
+|------|------|----|
+| `CEREBRAS_API_KEY` | Cerebras の API キー | |
+| `CEREBRAS_BASE_URL` | Cerebras の API エンドポイント | `https://api.cerebras.ai/v1` |
+| `CEREBRAS_MODEL` | 使用するモデル | `qwen-3.8-27b` |
+| `OPENROUTER_API_KEY` | OpenRouter の API キー | |
+| `OPENROUTER_BASE_URL` | OpenRouter の API エンドポイント | `https://openrouter.ai/api/v1` |
+| `OPENROUTER_MODELS` | 無料モデル（`:free`）をカンマ区切りで優先順に指定 | |
+| `OPENROUTER_SITE_URL` / `OPENROUTER_APP_NAME` | 任意。OpenRouter の推奨ヘッダー（`HTTP-Referer` / `X-Title`） | |
+| `LLM_TIMEOUT_SECONDS` | 1リクエストのタイムアウト秒数（既定 30） | `30` |
+
+- API キーが未設定のプロバイダはスキップされます。両方とも未設定の場合、アプリは起動時にエラーになります。
+- OpenRouter の無料モデルは予告なく入れ替わるため、定期的に確認して `OPENROUTER_MODELS` を更新してください。
+  ```bash
+  curl -s https://openrouter.ai/api/v1/models | jq -r '.data[].id' | grep ':free$'
+  ```
+- フォールバックの条件: 429（レート制限・待機せず即切り替え）、5xx、タイムアウト、接続エラー、404（モデル提供終了など）、
+  その他の 4xx（401/403/400 など。設定ミスの可能性があるため ERROR ログを出力）、出力 JSON のパース・検証失敗。
+- 両方とも失敗した場合は「現在クイズを生成できません」と表示します（HTTP 503）。
+- ログには、生成に成功したプロバイダ・モデルとフォールバック理由（ステータスコード等）を出力します。API キーとプロンプト本文は出力しません。
 
 ### ローカル開発
 
@@ -172,14 +201,21 @@ psql yahooquiz < migrations/001_initial_schema.sql
 python app.py
 ```
 
+### テスト
+
+LLM の API は実際には呼び出さず、モックでテストします。
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
 ### Dockerでの実行
 
 ```bash
 docker build -t yahooquiz .
 docker run -p 8080:8080 \
-  -e GEMINI_API_KEY=your-key \
-  -e DATABASE_URL=your-db-url \
-  -e JWT_SECRET_KEY=your-secret \
+  --env-file .env \
   yahooquiz
 ```
 
@@ -209,8 +245,10 @@ gcloud sql databases create yahooquiz --instance=yahooquiz-db
 4. Cloud Buildでビルド・デプロイ
 ```bash
 gcloud builds submit --config cloudbuild.yaml \
-  --substitutions=_GEMINI_API_KEY="your-key",_DATABASE_URL="your-db-url",_JWT_SECRET_KEY="your-secret"
+  --substitutions='^@^_DATABASE_URL=your-db-url@_JWT_SECRET_KEY=your-secret@_CEREBRAS_API_KEY=your-cerebras-key@_OPENROUTER_API_KEY=your-openrouter-key@_OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free'
 ```
+`OPENROUTER_MODELS` の値にカンマを含むため、`^@^` で区切り文字を `@` に変更しています。
+Base URL・Cerebras のモデル名・タイムアウトは `cloudbuild.yaml` の `substitutions` に既定値があり、同じ方法で上書きできます。
 
 ### Firebaseへのデプロイ
 

@@ -234,8 +234,10 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Firestore エミュレータを使う結合テスト（`tests/test_quiz_set_service.py` の一部）は、
-`FIRESTORE_EMULATOR_HOST` を設定したときだけ実行されます。
+Firestore エミュレータを使う結合テストは、`FIRESTORE_EMULATOR_HOST` を設定したときだけ実行されます。
+- `tests/test_quiz_set_service.py` の一部: クイズデータの保存・取得
+- `tests/test_points_transactions.py`: ポイントを動かす処理（対戦結果の登録・アイコン購入）のトランザクション。
+  並列リクエストでも残高のマイナス・二重購入・限定数の超過・ポイントと履歴の不一致が起きないことを確認します
 ```bash
 firebase emulators:start --only firestore   # 別のターミナルで起動
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 pytest

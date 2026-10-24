@@ -29,7 +29,7 @@ AIとクイズで対戦するWebアプリケーション（認証・ポイント
 ## 技術スタック
 
 - **Backend**: Python 3.11, Flask
-- **Database**: PostgreSQL
+- **Database**: Cloud Firestore（firebase-admin SDK）
 - **Authentication**: JWT, bcrypt
 - **Container**: Docker
 - **Deployment**: Google Cloud Run
@@ -53,8 +53,6 @@ yahooquiz/
 │   └── quiz_set_service.py # 1ゲーム分のクイズの保存・取得（Firestore）
 ├── middleware/            # ミドルウェア
 │   └── security.py       # セキュリティ対策
-├── migrations/            # DBマイグレーション
-│   └── 001_initial_schema.sql
 ├── templates/             # HTMLテンプレート
 ├── static/               # 静的ファイル
 ├── Dockerfile            # Dockerイメージ定義
@@ -139,7 +137,7 @@ yahooquiz/
 - Docker
 - Google Cloud SDK (gcloud)
 - Firebase CLI
-- PostgreSQL（ローカル開発用）
+- Firestore（Native モード）が有効な Firebase / GCP プロジェクト
 
 ### 環境変数設定
 
@@ -150,10 +148,24 @@ cp .env.example .env
 ```
 
 必須の環境変数:
-- `DATABASE_URL`: PostgreSQL接続文字列
 - `JWT_SECRET_KEY`: JWT署名用シークレットキー
 - `SECRET_KEY`: Flask セッション用シークレットキー
 - LLM 設定（下記）: Cerebras と OpenRouter の**少なくとも一方**（両方を推奨）
+
+#### Firestore の認証
+
+データベースは Cloud Firestore です。`firebase_admin.initialize_app()` を引数なしで呼んでいるため、
+認証には Application Default Credentials（ADC）を使います。マイグレーションはありません
+（コレクションは最初の書き込み時に作られ、`icons` は起動時に空ならデフォルトの6種を投入します）。
+
+- **Cloud Run 上**: サービスアカウントで自動的に認証されるため、設定は不要です（Firestore の読み書き権限が必要）。
+- **ローカル**: 次のどちらかを行います。認証できない場合もアプリは起動しますが、DB を使う機能は動きません（ログに警告が出ます）。
+  ```bash
+  gcloud auth application-default login
+  # または
+  export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+  ```
+  プロジェクトを自動判定できない場合は `GOOGLE_CLOUD_PROJECT` も指定してください。
 
 #### LLM（クイズ生成）の設定
 
@@ -188,17 +200,12 @@ cp .env.example .env
 pip install -r requirements.txt
 ```
 
-2. PostgreSQLデータベースを作成
+2. Firestore の認証情報を用意（上記「Firestore の認証」を参照）
 ```bash
-createdb yahooquiz
+gcloud auth application-default login
 ```
 
-3. マイグレーション実行
-```bash
-psql yahooquiz < migrations/001_initial_schema.sql
-```
-
-4. アプリケーション起動
+3. アプリケーション起動
 ```bash
 python app.py
 ```
@@ -236,10 +243,14 @@ FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 pytest
 
 ### Dockerでの実行
 
+Docker Compose での起動手順や、コンテナに認証情報を渡す方法は [DOCKER.md](DOCKER.md) を参照してください。
+
 ```bash
 docker build -t yahooquiz .
 docker run -p 8080:8080 \
   --env-file .env \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/secrets/adc.json \
+  -v ~/.config/gcloud/application_default_credentials.json:/secrets/adc.json:ro \
   yahooquiz
 ```
 
@@ -252,24 +263,15 @@ docker run -p 8080:8080 \
 gcloud config set project YOUR_PROJECT_ID
 ```
 
-2. Cloud SQL（PostgreSQL）インスタンス作成
-```bash
-gcloud sql instances create yahooquiz-db \
-  --database-version=POSTGRES_15 \
-  --tier=db-f1-micro \
-  --region=asia-northeast1
-```
+2. Firestore の準備
+   - プロジェクトで Firestore（Native モード）のデータベースを作成済みであること
+   - Cloud Run のサービスアカウントに Firestore の読み書き権限（例: `roles/datastore.user`）があること
+   - `quiz_sets` の TTL ポリシーを設定済みであること（「クイズデータの保存」を参照）
 
-3. データベース作成とマイグレーション実行
-```bash
-gcloud sql databases create yahooquiz --instance=yahooquiz-db
-# Cloud SQL Proxyを使用してマイグレーションを実行
-```
-
-4. Cloud Buildでビルド・デプロイ
+3. Cloud Buildでビルド・デプロイ
 ```bash
 gcloud builds submit --config cloudbuild.yaml \
-  --substitutions='^@^_DATABASE_URL=your-db-url@_JWT_SECRET_KEY=your-secret@_CEREBRAS_API_KEY=your-cerebras-key@_OPENROUTER_API_KEY=your-openrouter-key@_OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free'
+  --substitutions='^@^_JWT_SECRET_KEY=your-secret@_CEREBRAS_API_KEY=your-cerebras-key@_OPENROUTER_API_KEY=your-openrouter-key@_OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free'
 ```
 `OPENROUTER_MODELS` の値にカンマを含むため、`^@^` で区切り文字を `@` に変更しています。
 Base URL・Cerebras のモデル名・タイムアウトは `cloudbuild.yaml` の `substitutions` に既定値があり、同じ方法で上書きできます。
@@ -292,7 +294,7 @@ firebase deploy
 ## セキュリティ
 
 実装済みのセキュリティ対策:
-- SQLインジェクション対策（Prepared Statements）
+- クエリインジェクション対策（Firestore SDK によるクエリ組み立て。文字列連結でクエリを作らない）
 - XSS対策（入力サニタイズ、CSP）
 - パスワードハッシュ化（bcrypt）
 - JWT認証（アクセストークン + リフレッシュトークン）

@@ -7,6 +7,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# 同じドキュメントへの同時更新でトランザクションが競合したときの最大試行回数（ライブラリの既定は5回）。
+# 競合して再試行するトランザクションは順番待ちの位置を保つため、同時アクセス数ぶんの回数があれば成功する。
+TRANSACTION_MAX_ATTEMPTS = 10
+
 POINTS_PER_WIN = 100
 
 def _normalize_dt(dt):
@@ -16,82 +20,99 @@ def _normalize_dt(dt):
         return dt.replace(tzinfo=None)
     return dt
 
+class _MatchRejected(Exception):
+    """対戦結果を登録できない。トランザクションを中断し、書き込みは行わない"""
+
+    def __init__(self, payload):
+        super().__init__(payload.get('error'))
+        self.payload = payload
+
+
 def create_match(match_type, players, metadata=None):
     """
     Create a match and record results.
     players: list of {user_id, score, is_winner}
+    matches / match_players の作成、勝者へのポイント付与と points_transactions の記録、
+    各ユーザーの対戦数・勝利数の更新を1つのトランザクションで行う（途中で失敗したら何も書き込まない）。
     Returns: (success, data_or_error)
     """
     if not players or len(players) < 1:
         return False, {'error': 'At least one player required'}
 
+    user_ids = [player.get('user_id') for player in players]
+    if not all(user_ids):
+        return False, {'error': 'user_id required for all players'}
+    if len(set(user_ids)) != len(user_ids):
+        return False, {'error': 'Duplicate user_id in players'}
+
     try:
         db = get_db()
-        match_id = str(uuid.uuid4())
-        now = datetime.utcnow()
-
-        # Create match document
-        db.collection('matches').document(match_id).set({
-            'match_type': match_type,
-            'metadata': metadata,
-            'finished_at': now,
-            'created_at': now
-        })
-
-        # Process each player
-        for player in players:
-            user_id = player.get('user_id')
-            score = player.get('score', 0)
-            is_winner = player.get('is_winner', False)
-
-            if not user_id:
-                return False, {'error': 'user_id required for all players'}
-
-            # Create match_player record
-            mp_id = str(uuid.uuid4())
-            db.collection('match_players').document(mp_id).set({
-                'match_id': match_id,
-                'user_id': user_id,
-                'score': score,
-                'is_winner': is_winner,
-                'created_at': now
-            })
-
-            user_ref = db.collection('users').document(user_id)
-            user_doc = user_ref.get()
-            if not user_doc.exists:
-                return False, {'error': f'User {user_id} not found'}
-
-            # Increment total_matches and wins using atomic increment
-            update_data = {
-                'total_matches': fs.Increment(1),
-                'updated_at': now
-            }
-            if is_winner:
-                update_data['wins'] = fs.Increment(1)
-                update_data['points'] = fs.Increment(POINTS_PER_WIN)
-
-                # Record points transaction
-                pt_id = str(uuid.uuid4())
-                db.collection('points_transactions').document(pt_id).set({
-                    'user_id': user_id,
-                    'amount': POINTS_PER_WIN,
-                    'type': 'match_win',
-                    'reference_id': match_id,
-                    'created_at': now
-                })
-
-            user_ref.update(update_data)
-
-        return True, {
-            'match_id': match_id,
-            'created_at': now.isoformat(),
-            'points_awarded': POINTS_PER_WIN
-        }
-
+        return True, _create_match_in_transaction(db.transaction(max_attempts=TRANSACTION_MAX_ATTEMPTS), db, match_type, players, metadata)
+    except _MatchRejected as e:
+        return False, e.payload
     except Exception as e:
         logger.error(f"Error creating match: {e}")
         return False, {'error': 'Failed to create match'}
+
+
+@fs.transactional
+def _create_match_in_transaction(transaction, db, match_type, players, metadata):
+    # Firestore のトランザクションでは、読み取りをすべて書き込みより先に行う必要がある
+    user_refs = [db.collection('users').document(player['user_id']) for player in players]
+    for user_ref in user_refs:
+        if not user_ref.get(transaction=transaction).exists:
+            raise _MatchRejected({'error': f'User {user_ref.id} not found'})
+
+    match_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+
+    # Create match document
+    transaction.set(db.collection('matches').document(match_id), {
+        'match_type': match_type,
+        'metadata': metadata,
+        'finished_at': now,
+        'created_at': now
+    })
+
+    points_awarded = 0
+    for player, user_ref in zip(players, user_refs):
+        is_winner = bool(player.get('is_winner', False))
+
+        # Create match_player record
+        transaction.set(db.collection('match_players').document(str(uuid.uuid4())), {
+            'match_id': match_id,
+            'user_id': user_ref.id,
+            'score': player.get('score', 0),
+            'is_winner': is_winner,
+            'created_at': now
+        })
+
+        update_data = {
+            'total_matches': fs.Increment(1),
+            'updated_at': now
+        }
+        if is_winner:
+            update_data['wins'] = fs.Increment(1)
+            update_data['points'] = fs.Increment(POINTS_PER_WIN)
+            points_awarded = POINTS_PER_WIN
+
+            # Record points transaction
+            transaction.set(db.collection('points_transactions').document(str(uuid.uuid4())), {
+                'user_id': user_ref.id,
+                'amount': POINTS_PER_WIN,
+                'type': 'match_win',
+                'reference_id': match_id,
+                'created_at': now
+            })
+
+        transaction.update(user_ref, update_data)
+
+    return {
+        'match_id': match_id,
+        'created_at': now.isoformat(),
+        # 勝者1人あたりに付与したポイント（勝者がいなければ 0）
+        'points_awarded': points_awarded
+    }
 
 def get_user_match_history(user_id, limit=10):
     """Get match history for a user"""

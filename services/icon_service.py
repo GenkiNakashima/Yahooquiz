@@ -98,13 +98,13 @@ def _purchase_in_transaction(transaction, db, user_id, icon_id):
     icon = icon_doc.to_dict()
 
     # Check if user already owns this icon
-    owned = list(transaction.get(
-        db.collection('user_icons')
-        .where('user_id', '==', user_id)
-        .where('icon_id', '==', icon_id)
-        .limit(1)
-    ))
-    if owned:
+    # トランザクション内のクエリは検索に使ったインデックスの範囲をロックするため、icon_id でも絞り込むと
+    # 同じアイコンを買う他のユーザーの購入とも競合してしまう。自分の所持アイコンだけを読み、照合はここで行う。
+    owned_icon_ids = {
+        doc.to_dict().get('icon_id')
+        for doc in transaction.get(db.collection('user_icons').where('user_id', '==', user_id))
+    }
+    if icon_id in owned_icon_ids:
         raise _PurchaseRejected({'error': 'You already own this icon'})
 
     # Check if limited icon is still available

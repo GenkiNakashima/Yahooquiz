@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, request, session, redirect, url_for
+from flask import Flask, render_template, request, session, redirect, url_for, send_from_directory
 from flask_cors import CORS
 from datetime import datetime
 from honban import QuizGenerator
@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Import database and API routes
+# Import database (Firestore) and API routes
 from db import init_db_pool, close_db_pool
 from api_routes import api
 from middleware.security import setup_security_headers
@@ -34,12 +34,39 @@ setup_security_headers(app)
 # Register API blueprint
 app.register_blueprint(api)
 
-# Initialize database connection pool
+# Initialize Firestore
 try:
     init_db_pool()
-    logger.info("Database connection pool initialized")
+    logger.info("Firestore client initialized")
 except Exception as e:
-    logger.warning(f"Database initialization failed: {e}. Some features may be unavailable.")
+    logger.warning(f"Firestore initialization failed: {e}. Some features may be unavailable.")
+
+# Seed icons if the collection is empty
+def seed_icons_if_empty():
+    try:
+        from db import get_db
+        import uuid
+        db = get_db()
+        existing = list(db.collection('icons').limit(1).stream())
+        if existing:
+            return
+        default_icons = [
+            {'name': 'bronze_badge',   'description': 'ブロンズバッジ',     'price': 100,   'is_limited': False, 'total_supply': None},
+            {'name': 'silver_badge',   'description': 'シルバーバッジ',     'price': 500,   'is_limited': False, 'total_supply': None},
+            {'name': 'gold_badge',     'description': 'ゴールドバッジ',     'price': 1000,  'is_limited': False, 'total_supply': None},
+            {'name': 'platinum_badge', 'description': 'プラチナバッジ',     'price': 2500,  'is_limited': True,  'total_supply': 100},
+            {'name': 'diamond_badge',  'description': 'ダイヤモンドバッジ', 'price': 5000,  'is_limited': True,  'total_supply': 50},
+            {'name': 'quiz_master',    'description': 'クイズマスター',     'price': 10000, 'is_limited': True,  'total_supply': 10},
+        ]
+        from datetime import datetime, timezone
+        for icon in default_icons:
+            icon['created_at'] = datetime.now(timezone.utc)
+            db.collection('icons').document(str(uuid.uuid4())).set(icon)
+        logger.info(f"Seeded {len(default_icons)} icons into Firestore")
+    except Exception as e:
+        logger.warning(f"Icon seeding failed: {e}")
+
+seed_icons_if_empty()
 
 # Register cleanup function to close pool on app shutdown
 import atexit
@@ -54,9 +81,14 @@ quiz_generator = QuizGenerator(api_key=api_key)
 
 @app.route('/favicon.ico')
 def favicon():
-   """ブラウザのfavicon要求に200で応答（404ノイズ抑制）。"""
-   # staticにfaviconが無い場合でも空レスポンスでOK
-   return ('', 200, {'Content-Type': 'image/x-icon'})
+   """ブラウザのfavicon要求にPNGファイルを提供。"""
+   try:
+      return send_from_directory(os.path.join(app.root_path, 'static/images'), 
+                                'aiquiz-favicon.png', 
+                                mimetype='image/png')
+   except:
+      # ファイルが見つからない場合は204 No Contentで応答
+      return ('', 204)
 
 @app.route('/')
 def index():
@@ -88,6 +120,14 @@ def leaderboard():
    """ランキング"""
    return render_template('leaderboard.html')
 
+@app.route('/genre', methods=['GET', 'POST'])
+def genre():
+   """ジャンル選択ページ"""
+   if request.method == 'POST':
+       session['genre'] = request.form.get('genre', 'business')
+       return redirect(url_for('game'))
+   return render_template('genre.html')
+
 @app.route('/game', methods=['GET', 'POST'])
 def game():
    """ゲーム開始ページ"""
@@ -111,7 +151,7 @@ def quiz():
     
     if request.method == 'GET':
     # 新しい問題の用意
-        quiz_data = quiz_generator.create_quiz()
+        quiz_data = quiz_generator.create_quiz(session.get('genre', 'business'))
         if quiz_data:
             session['current_quiz'] = quiz_data
             session['ai_buzzer_time'] = quiz_generator.simulate_ai_buzzer(ai_level)
@@ -219,5 +259,5 @@ def result():
                         ai_level=ai_level)
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port, debug=False)

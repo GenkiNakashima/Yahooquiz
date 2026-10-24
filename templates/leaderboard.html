@@ -1,178 +1,296 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ランキング - Yahooquiz</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <style>
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .header h1 {
-            margin: 0 0 10px 0;
-            color: #333;
-        }
-        .nav {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-top: 20px;
-        }
-        .nav button {
-            padding: 10px 20px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        .nav button:hover {
-            background: #45a049;
-        }
-        .leaderboard {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        .leaderboard-item {
-            display: grid;
-            grid-template-columns: 60px 1fr 100px 100px 100px;
-            gap: 10px;
-            padding: 15px 20px;
-            border-bottom: 1px solid #eee;
-            align-items: center;
-        }
-        .leaderboard-item:last-child {
-            border-bottom: none;
-        }
-        .leaderboard-item.top1 {
-            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
-            color: white;
-        }
-        .leaderboard-item.top2 {
-            background: linear-gradient(135deg, #C0C0C0 0%, #A8A8A8 100%);
-            color: white;
-        }
-        .leaderboard-item.top3 {
-            background: linear-gradient(135deg, #CD7F32 0%, #B8860B 100%);
-            color: white;
-        }
-        .rank {
-            font-size: 24px;
-            font-weight: bold;
-            text-align: center;
-        }
-        .user-name {
-            font-weight: bold;
-        }
-        .stat {
-            text-align: center;
-            font-size: 14px;
-        }
-        .stat-label {
-            font-size: 11px;
-            opacity: 0.8;
-            display: block;
-        }
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #777;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ランキング — JAIJAI</title>
+<link rel="icon" type="image/png" href="/static/images/aiquiz-favicon.png">
+<link rel="stylesheet" href="/static/css/theme.css">
+<style>
+  /* ── Header card ── */
+  .header-card {
+    background: var(--glass-dark);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-light); border-radius: 2px;
+    padding: 36px 48px;
+    display: flex; align-items: center; justify-content: space-between; gap: 32px;
+    margin-bottom: 24px; position: relative; overflow: hidden;
+    animation: fadeUp 0.8s var(--ease) both;
+  }
+  .header-card::before {
+    content: ''; position: absolute;
+    bottom: 0; left: 48px; right: 48px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    opacity: 0.5;
+  }
+  .board-title {
+    font-family: var(--font-display); font-size: 36px; font-weight: 300;
+    letter-spacing: 0.06em; color: var(--off-white); margin-bottom: 6px;
+  }
+  .board-sub {
+    font-size: 10px; font-weight: 200; letter-spacing: 0.22em;
+    text-transform: uppercase; color: rgba(245,242,236,0.35);
+  }
+  .header-nav { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .header-nav .nav-btn { color: rgba(245,242,236,0.55); }
+  .header-nav .nav-btn:hover { color: var(--off-white); border-color: var(--border-light); }
+  .header-nav .nav-btn::after { background: var(--gold-light); }
+
+  /* ── Leaderboard panel ── */
+  .lb-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(184,150,46,0.12); border-radius: 2px;
+    overflow: hidden;
+    animation: fadeUp 0.8s var(--ease) 0.15s both;
+  }
+  .lb-head {
+    display: grid;
+    grid-template-columns: 64px 1fr 110px 100px 100px;
+    gap: 0; padding: 14px 32px;
+    border-bottom: 1px solid rgba(184,150,46,0.12);
+    font-size: 8px; font-weight: 300; letter-spacing: 0.24em;
+    text-transform: uppercase; color: rgba(26,26,24,0.4);
+  }
+  .lb-row {
+    display: grid;
+    grid-template-columns: 64px 1fr 110px 100px 100px;
+    gap: 0; padding: 18px 32px;
+    border-bottom: 1px solid rgba(26,26,24,0.05);
+    align-items: center;
+    opacity: 0; transform: translateX(-8px);
+    transition: opacity 0.5s var(--ease), transform 0.5s var(--ease), background 0.2s;
+  }
+  .lb-row:last-child { border-bottom: none; }
+  .lb-row:hover { background: rgba(184,150,46,0.03); }
+
+  /* top 3 styling */
+  .lb-row.rank-1 { background: linear-gradient(90deg, rgba(212,175,90,0.08) 0%, transparent 60%); }
+  .lb-row.rank-2 { background: linear-gradient(90deg, rgba(180,180,180,0.07) 0%, transparent 60%); }
+  .lb-row.rank-3 { background: linear-gradient(90deg, rgba(180,130,80,0.07) 0%, transparent 60%); }
+
+  .lb-rank {
+    font-family: var(--font-display); font-size: 22px; font-weight: 300;
+    letter-spacing: 0.04em; color: rgba(26,26,24,0.4); text-align: left;
+  }
+  .lb-row.rank-1 .lb-rank { color: var(--gold); }
+  .lb-row.rank-2 .lb-rank { color: #A8A8A8; }
+  .lb-row.rank-3 .lb-rank { color: #B87C4A; }
+
+  .lb-name {
+    font-family: var(--font-display); font-size: 17px; font-weight: 400;
+    letter-spacing: 0.04em; color: var(--charcoal);
+  }
+  .lb-stat {
+    font-size: 12px; font-weight: 300; letter-spacing: 0.1em;
+    color: rgba(26,26,24,0.6); text-align: center;
+  }
+  .lb-stat strong { font-family: var(--font-display); font-size: 16px; font-weight: 400; color: var(--charcoal); }
+
+  .lb-points strong { color: var(--gold); }
+
+  .lb-loading {
+    padding: 60px; text-align: center;
+    font-size: 11px; font-weight: 200; letter-spacing: 0.2em;
+    text-transform: uppercase; color: rgba(26,26,24,0.35);
+  }
+
+  @media (max-width: 700px) {
+    .lb-head { display: none; }
+    .lb-row { grid-template-columns: 48px 1fr auto; gap: 12px; padding: 16px 20px; }
+    .lb-row > *:nth-child(3), .lb-row > *:nth-child(4) { display: none; }
+    .lb-stat.lb-winrate { display: none; }
+    .header-card { flex-direction: column; align-items: flex-start; }
+  }
+
+  /* ハンバーガーメニューボタン */
+  .hamburger-btn {
+    display: none; /* PCでは非表示 */
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    flex-direction: column;
+    gap: 4px;
+    position: relative;
+    z-index: 11;
+  }
+  .hamburger-line {
+    width: 20px;
+    height: 2px;
+    background: var(--charcoal);
+    transition: all 0.3s var(--ease);
+    transform-origin: center;
+  }
+
+  /* スマホ時のハンバーガーメニュー開閉アニメーション */
+  .hamburger-btn.active .hamburger-line:nth-child(1) {
+    transform: rotate(45deg) translate(5px, 5px);
+  }
+  .hamburger-btn.active .hamburger-line:nth-child(2) {
+    opacity: 0;
+  }
+  .hamburger-btn.active .hamburger-line:nth-child(3) {
+    transform: rotate(-45deg) translate(7px, -6px);
+  }
+
+  /* スマホ時のナビゲーション表示制御 */
+  @media (max-width: 700px) {
+    .hamburger-btn {
+      display: flex; /* スマホで表示 */
+      background: #ffffff;
+      border-radius: 4px;
+    }
+    .header-nav {
+      position: fixed;
+      top: 0;
+      right: -100%; /* 初期状態で画面外 */
+      width: 280px;
+      height: 100vh;
+      background: var(--glass-dark);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-left: 1px solid var(--border-light);
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 80px 24px 24px;
+      gap: 16px;
+      transition: right 0.3s var(--ease);
+      z-index: 10;
+    }
+    .header-nav.open {
+      right: 0; /* 開いた状態 */
+    }
+    .header-nav .nav-btn {
+      width: 100%;
+      text-align: left;
+      padding: 12px 16px;
+      border-radius: 4px;
+    }
+    .header-nav .nav-btn:hover {
+      background: rgba(245,242,236,0.05);
+    }
+  }
+</style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🏆 ランキング</h1>
-            <p>トッププレイヤー一覧</p>
-            <div class="nav">
-                <button onclick="location.href='/dashboard'">ダッシュボード</button>
-                <button onclick="location.href='/'">ゲーム</button>
-                <button onclick="location.href='/shop'">ショップ</button>
-            </div>
-        </div>
 
-        <div id="leaderboard" class="leaderboard">
-            <div class="loading">ランキングを読み込み中...</div>
-        </div>
+<div class="bg-letters" aria-hidden="true">
+  <span class="bg-letter" style="font-size:280px;top:-40px;left:-30px;transform:rotate(-8deg)">R</span>
+  <span class="bg-letter" style="font-size:200px;top:200px;left:-30px;transform:rotate(5deg)">A</span>
+  <span class="bg-letter" style="font-size:300px;top:-20px;right:-50px;transform:rotate(6deg)">N</span>
+  <span class="bg-letter" style="font-size:220px;top:350px;right:-20px;transform:rotate(-4deg)">K</span>
+  <span class="bg-letter" style="font-size:240px;top:600px;right:-40px;transform:rotate(5deg)">!</span>
+</div>
+
+<div class="page" style="max-width:900px">
+  <div class="header-card">
+    <div>
+      <div class="board-title">ランキング</div>
+      <div class="board-sub">Top Players — Updated live</div>
     </div>
+    <nav class="header-nav">
+      <a href="/" class="nav-btn">ゲーム</a>
+      <a href="/dashboard" class="nav-btn">ダッシュボード</a>
+      <a href="/shop" class="nav-btn">ショップ</a>
+    </nav>
+    <!-- ハンバーガーメニューボタン（スマホ時のみ表示） -->
+    <button class="hamburger-btn" id="hamburgerBtn" aria-label="メニューを開く">
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+    </button>
+  </div>
 
-    <script src="/static/javascript/api.js"></script>
-    <script>
-        const rankEmojis = {
-            1: '🥇',
-            2: '🥈',
-            3: '🥉'
-        };
+  <div class="lb-panel">
+    <div class="lb-head">
+      <div>順位</div>
+      <div>プレイヤー</div>
+      <div style="text-align:center">ポイント</div>
+      <div style="text-align:center">対戦数</div>
+      <div style="text-align:center">勝率</div>
+    </div>
+    <div id="leaderboard">
+      <div class="lb-loading">ランキングを読み込み中...</div>
+    </div>
+  </div>
+</div>
 
-        async function loadLeaderboard() {
-            try {
-                const response = await fetch('/api/leaderboard');
+<script src="/static/javascript/api.js"></script>
+<script>
+const rankEmojis = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
-                if (response.ok) {
-                    const data = await response.json();
-                    renderLeaderboard(data.leaderboard);
-                } else {
-                    document.getElementById('leaderboard').innerHTML =
-                        '<div class="loading">ランキングの取得に失敗しました</div>';
-                }
-            } catch (error) {
-                console.error('Error loading leaderboard:', error);
-                document.getElementById('leaderboard').innerHTML =
-                    '<div class="loading">ネットワークエラーが発生しました</div>';
-            }
-        }
+async function loadLeaderboard() {
+  try {
+    const r = await fetch('/api/leaderboard');
+    if (r.ok) {
+      const data = await r.json();
+      renderLeaderboard(data.leaderboard);
+    } else {
+      document.getElementById('leaderboard').innerHTML = '<div class="lb-loading">ランキングの取得に失敗しました</div>';
+    }
+  } catch (e) {
+    document.getElementById('leaderboard').innerHTML = '<div class="lb-loading">ネットワークエラーが発生しました</div>';
+  }
+}
 
-        function renderLeaderboard(leaderboard) {
-            const leaderboardDiv = document.getElementById('leaderboard');
+function renderLeaderboard(lb) {
+  const el = document.getElementById('leaderboard');
+  if (!lb || lb.length === 0) {
+    el.innerHTML = '<div class="lb-loading">まだランキングデータがありません</div>';
+    return;
+  }
+  el.innerHTML = lb.map(p => {
+    const rankClass = p.rank <= 3 ? `rank-${p.rank}` : '';
+    const rankDisplay = rankEmojis[p.rank] || `#${p.rank}`;
+    return `
+      <div class="lb-row ${rankClass}">
+        <div class="lb-rank">${rankDisplay}</div>
+        <div class="lb-name">${p.display_name}</div>
+        <div class="lb-stat lb-points"><strong>${p.points.toLocaleString()}</strong> pt</div>
+        <div class="lb-stat"><strong>${p.total_matches}</strong> 戦</div>
+        <div class="lb-stat lb-winrate"><strong>${p.win_rate}</strong> %</div>
+      </div>
+    `;
+  }).join('');
 
-            if (leaderboard && leaderboard.length > 0) {
-                leaderboardDiv.innerHTML = leaderboard.map(player => {
-                    const rankClass = player.rank <= 3 ? `top${player.rank}` : '';
-                    const rankDisplay = rankEmojis[player.rank] || `#${player.rank}`;
+  el.querySelectorAll('.lb-row').forEach((row, i) => {
+    setTimeout(() => {
+      row.style.opacity = '1';
+      row.style.transform = 'translateX(0)';
+    }, i * 55);
+  });
+}
 
-                    return `
-                        <div class="leaderboard-item ${rankClass}">
-                            <div class="rank">${rankDisplay}</div>
-                            <div class="user-name">${player.display_name}</div>
-                            <div class="stat">
-                                <span class="stat-label">ポイント</span>
-                                ${player.points.toLocaleString()}
-                            </div>
-                            <div class="stat">
-                                <span class="stat-label">対戦数</span>
-                                ${player.total_matches}
-                            </div>
-                            <div class="stat">
-                                <span class="stat-label">勝率</span>
-                                ${player.win_rate}%
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                leaderboardDiv.innerHTML = '<div class="loading">まだランキングデータがありません</div>';
-            }
-        }
+loadLeaderboard();
+setInterval(loadLeaderboard, 30000);
 
-        // Load leaderboard on page load
-        loadLeaderboard();
+// ハンバーガーメニューの開閉機能
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+const headerNav = document.querySelector('.header-nav');
 
-        // Refresh every 30 seconds
-        setInterval(loadLeaderboard, 30000);
-    </script>
+if (hamburgerBtn && headerNav) {
+  hamburgerBtn.addEventListener('click', () => {
+    hamburgerBtn.classList.toggle('active');
+    headerNav.classList.toggle('open');
+  });
+
+  // メニュー外クリックで閉じる
+  document.addEventListener('click', (e) => {
+    if (!hamburgerBtn.contains(e.target) && !headerNav.contains(e.target)) {
+      hamburgerBtn.classList.remove('active');
+      headerNav.classList.remove('open');
+    }
+  });
+
+  // メニュー項目クリックで閉じる
+  headerNav.addEventListener('click', (e) => {
+    if (e.target.classList.contains('nav-btn') || e.target.closest('.nav-btn')) {
+      hamburgerBtn.classList.remove('active');
+      headerNav.classList.remove('open');
+    }
+  });
+}
+</script>
 </body>
 </html>

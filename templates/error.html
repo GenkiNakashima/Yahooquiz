@@ -1,56 +1,92 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-    <title>エラー - AI早押しクイズ対決</title>
-    <link rel="stylesheet" href="static/css/style.css">
-    <style>
-        .error-container {
-            max-width: 600px;
-            margin: 100px auto;
-            padding: 30px;
-            text-align: center;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        .error-icon {
-            font-size: 64px;
-            margin-bottom: 20px;
-            color: #dc3545;
-        }
-
-        .error-message {
-            margin: 20px 0;
-            color: #666;
-            font-size: 1.1em;
-            line-height: 1.6;
-        }
-
-        .return-button {
-            display: inline-block;
-            padding: 12px 24px;
-            background-color: #007bff;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            margin-top: 20px;
-            transition: background-color 0.3s;
-        }
-
-        .return-button:hover {
-            background-color: #0056b3;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>エラー — JAIJAI</title>
+<link rel="icon" type="image/png" href="/static/images/aiquiz-favicon.png">
+<link rel="stylesheet" href="/static/css/theme.css">
+<style>
+  .error-wrap {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 100vh; padding: 40px 20px;
+    position: relative; z-index: 1;
+    gap: 0;
+  }
+  .error-card {
+    background: var(--glass-dark);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-light); border-radius: 2px;
+    padding: 52px 56px; max-width: 520px; width: 100%;
+    text-align: center; position: relative; overflow: hidden;
+    animation: fadeUp 0.8s var(--ease) both;
+  }
+  .error-card::after {
+    content: ''; position: absolute;
+    bottom: 0; left: 48px; right: 48px; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(139,32,32,0.6), transparent);
+    opacity: 0.6;
+  }
+  .error-icon {
+    font-size: 48px; margin-bottom: 24px; display: block;
+    opacity: 0; animation: fadeIn 0.6s var(--ease) 0.3s forwards;
+  }
+  .error-title {
+    font-family: var(--font-display); font-size: 32px; font-weight: 300;
+    letter-spacing: 0.08em; color: var(--off-white); margin-bottom: 16px;
+  }
+  .error-message {
+    font-size: 13px; font-weight: 300; letter-spacing: 0.06em;
+    color: rgba(245,242,236,0.5); line-height: 1.8; margin-bottom: 36px;
+  }
+  .error-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .error-btn-primary {
+    display: inline-flex; align-items: center; gap: 12px;
+    background: var(--off-white); border: 1px solid var(--off-white);
+    border-radius: 2px; padding: 0 32px; height: 50px;
+    font-family: var(--font-display); font-size: 16px; font-weight: 400;
+    letter-spacing: 0.1em; color: var(--charcoal); text-decoration: none;
+    transition: all 0.3s var(--ease);
+  }
+  .error-btn-primary:hover { background: #fff; transform: translateY(-1px); }
+  .error-btn-ghost {
+    display: inline-flex; align-items: center;
+    background: transparent; border: 1px solid rgba(245,242,236,0.15);
+    border-radius: 2px; padding: 0 28px; height: 50px;
+    font-family: var(--font-body); font-size: 10px; font-weight: 300;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    color: rgba(245,242,236,0.45); text-decoration: none;
+    transition: all 0.3s var(--ease);
+  }
+  .error-btn-ghost:hover { border-color: rgba(245,242,236,0.35); color: rgba(245,242,236,0.8); }
+</style>
 </head>
 <body>
-    <div class="error-container">
-        <div class="error-icon">⚠️</div>
-        <h1>エラーが発生しました</h1>
-        <p class="error-message">
-            {{ error_message }}
-        </p>
-        <a href="/quiz" class="return-button" style="margin-right: 10px;">もう一度試す</a>
+
+<div class="bg-letters" aria-hidden="true">
+  <span class="bg-letter" style="font-size:300px;top:-60px;left:-40px;transform:rotate(-10deg)">!</span>
+  <span class="bg-letter" style="font-size:200px;top:300px;left:-30px;transform:rotate(5deg)">?</span>
+  <span class="bg-letter" style="font-size:280px;top:-40px;right:-60px;transform:rotate(8deg)">!</span>
+  <span class="bg-letter" style="font-size:180px;top:400px;right:-20px;transform:rotate(-6deg)">?</span>
+</div>
+
+<div class="error-wrap">
+  <div class="error-card">
+    <div class="corner corner-tl"></div>
+    <div class="corner corner-tr"></div>
+    <div class="corner corner-bl"></div>
+    <div class="corner corner-br"></div>
+
+    <span class="error-icon">⚠️</span>
+    <div class="error-title">エラーが発生しました</div>
+    <div class="error-message">{{ error_message }}</div>
+    <div class="error-actions">
+      <a href="/quiz" class="error-btn-primary">もう一度試す</a>
+      <a href="/" class="error-btn-ghost">トップへ戻る</a>
     </div>
+  </div>
+</div>
+
 </body>
 </html>

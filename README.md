@@ -6,6 +6,7 @@ AIとクイズで対戦するWebアプリケーション（認証・ポイント
 
 ### クイズ機能
 - LLM（Cerebras、失敗時は OpenRouter の無料モデルにフォールバック）を使用したニュース記事からの自動クイズ生成
+- 1ゲーム分（5問）の問題をゲーム開始時に1回の LLM 呼び出しでまとめて生成し、Firestore に保存
 - AI対戦相手との早押しクイズバトル
 - 3段階の難易度（強い・普通・弱い）
 
@@ -48,7 +49,8 @@ yahooquiz/
 │   ├── auth.py           # 認証サービス
 │   ├── user_service.py   # ユーザー管理
 │   ├── match_service.py  # 対戦管理
-│   └── icon_service.py   # アイコン管理
+│   ├── icon_service.py   # アイコン管理
+│   └── quiz_set_service.py # 1ゲーム分のクイズの保存・取得（Firestore）
 ├── middleware/            # ミドルウェア
 │   └── security.py       # セキュリティ対策
 ├── migrations/            # DBマイグレーション
@@ -201,13 +203,35 @@ psql yahooquiz < migrations/001_initial_schema.sql
 python app.py
 ```
 
+### クイズデータの保存（Firestore `quiz_sets` コレクション）
+
+1ゲーム分の問題（記事本文を含む）は Firestore の `quiz_sets` コレクションに1ドキュメントとして保存し、
+セッション Cookie にはドキュメント ID だけを入れます（記事本文を入れると Cookie の上限 約4KB を超えるため）。
+そのため、**ゲームを遊ぶには Firestore への接続が必要**です。
+
+各ドキュメントには `expires_at`（作成から1日後）が入っています。Firestore の TTL ポリシーを**最初に1回だけ**設定すると、
+期限を過ぎたドキュメントが自動で削除されます（TTL による削除は遅れることがあるため、アプリ側でも読み込み時に期限を確認しています）。
+
+```bash
+gcloud firestore fields ttls update expires_at \
+  --collection-group=quiz_sets --enable-ttl --project=YOUR_PROJECT_ID
+```
+Firebase コンソール（Firestore → TTL）からも設定できます。
+
 ### テスト
 
-LLM の API は実際には呼び出さず、モックでテストします。
+LLM の API・ニュース記事の取得・Firestore は実際には使わず、モックでテストします。
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
+```
+
+Firestore エミュレータを使う結合テスト（`tests/test_quiz_set_service.py` の一部）は、
+`FIRESTORE_EMULATOR_HOST` を設定したときだけ実行されます。
+```bash
+firebase emulators:start --only firestore   # 別のターミナルで起動
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 pytest
 ```
 
 ### Dockerでの実行

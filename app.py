@@ -5,6 +5,7 @@ from datetime import datetime
 from honban import QuizGenerator
 import llm_client
 from llm_client import QuizGenerationError
+from services.quiz_set_service import save_quiz_set, get_quiz
 import os
 import logging
 from dotenv import load_dotenv
@@ -85,6 +86,10 @@ logger.info(f"利用する LLM プロバイダ（優先順）: {', '.join(llm_pr
 
 quiz_generator = QuizGenerator()
 
+TOTAL_ROUNDS = 5
+QUIZ_GENERATION_ERROR_MESSAGE = "現在クイズを生成できません。しばらく時間をおいて再度お試しください。"
+QUIZ_STORAGE_ERROR_MESSAGE = "現在ゲームを開始・進行できません（データベースに接続できません）。しばらく時間をおいて再度お試しください。"
+
 @app.route('/favicon.ico')
 def favicon():
    """ブラウザのfavicon要求にPNGファイルを提供。"""
@@ -140,51 +145,59 @@ def game():
    if request.method == 'POST':
        # AIレベルの選択を受け取る
        ai_level = request.form.get('ai_level', 'normal')
+
+       # 1ゲーム分の問題を1回の LLM 呼び出しでまとめて生成し、Firestore に保存する
+       # （記事本文を含むため Cookie には入れず、ID だけをセッションに持つ）
+       try:
+           quizzes = quiz_generator.create_quiz_set(TOTAL_ROUNDS, session.get('genre', 'business'))
+       except QuizGenerationError:
+           return render_template('error.html', error_message=QUIZ_GENERATION_ERROR_MESSAGE), 503
+       try:
+           quiz_set_id = save_quiz_set(quizzes)
+       except Exception:
+           logger.exception("クイズの保存に失敗しました")
+           return render_template('error.html', error_message=QUIZ_STORAGE_ERROR_MESSAGE), 503
+
        session['ai_level'] = ai_level
        session['score'] = {'player': 0, 'ai': 0}
        session['round'] = 0
-       session['total_rounds'] = 5
+       session['total_rounds'] = TOTAL_ROUNDS
+       session['quiz_set_id'] = quiz_set_id
        return redirect(url_for('quiz'))
    return render_template('game.html')
 
 @app.route('/quiz', methods=['GET', 'POST'])
 def quiz():
     """クイズページ"""
-    if 'round' not in session:
+    if 'round' not in session or 'quiz_set_id' not in session:
         return redirect(url_for('index'))
     
     ai_level = session.get('ai_level', 'normal')
+
+    # 現在のラウンドの問題を Firestore から取得する（ゲーム開始時に生成済み）
+    try:
+        quiz_data = get_quiz(session['quiz_set_id'], session['round'])
+    except Exception:
+        logger.exception("クイズの取得に失敗しました")
+        return render_template('error.html', error_message=QUIZ_STORAGE_ERROR_MESSAGE), 503
+    if not quiz_data:
+        # 期限切れ・削除済み・全ラウンド終了後など
+        return redirect(url_for('index'))
     
     if request.method == 'GET':
-    # 新しい問題の用意
-        try:
-            quiz_data = quiz_generator.create_quiz(session.get('genre', 'business'))
-        except QuizGenerationError:
-            return render_template('error.html',
-                                error_message="現在クイズを生成できません。しばらく時間をおいて再度お試しください。"), 503
-        if quiz_data:
-            session['current_quiz'] = quiz_data
-            session['ai_buzzer_time'] = quiz_generator.simulate_ai_buzzer(ai_level)
-            ai_thinking = quiz_generator.get_ai_thinking_message(ai_level)
-            return render_template('quiz.html',
-                                question=quiz_data['question'],
-                                article_content=quiz_data['article_content'],
-                                article_url=quiz_data['article_url'],
-                                article_title=quiz_data['article_title'],
-                                round=session['round'] + 1,
-                                total=session['total_rounds'],
-                                ai_level=ai_level,
-                                ai_thinking=ai_thinking)
-        else:
-            # quiz_dataが取得できなかった場合のエラーハンドリング
-            return render_template('error.html', 
-                                error_message="クイズの生成に失敗しました。"), 500
+        session['ai_buzzer_time'] = quiz_generator.simulate_ai_buzzer(ai_level)
+        ai_thinking = quiz_generator.get_ai_thinking_message(ai_level)
+        return render_template('quiz.html',
+                            question=quiz_data['question'],
+                            article_content=quiz_data['article_content'],
+                            article_url=quiz_data['article_url'],
+                            article_title=quiz_data['article_title'],
+                            round=session['round'] + 1,
+                            total=session['total_rounds'],
+                            ai_level=ai_level,
+                            ai_thinking=ai_thinking)
     
     elif request.method == 'POST':
-        quiz_data = session.get('current_quiz', {})
-        if not quiz_data:
-            return redirect(url_for('index'))
-
         player_time = float(request.form.get('time', 999))
         ai_time = session.get('ai_buzzer_time', 999)
         

@@ -5,7 +5,7 @@
 - メイン: Cerebras（OpenAI 互換 API）
 - フォールバック: OpenRouter の無料モデル（`models` 配列で OpenRouter 側の自動フォールバックを利用）
 
-呼び出し側は generate_quiz() だけを使う。プロバイダ・モデル名はすべて環境変数で指定する。
+呼び出し側は generate_quizzes() だけを使う（1ゲーム分の問題を1回の呼び出しで生成する）。プロバイダ・モデル名はすべて環境変数で指定する。
 """
 import json
 import logging
@@ -25,9 +25,11 @@ SYSTEM_PROMPT = (
     "必ず指定された JSON オブジェクトのみを出力し、前置き・説明文・コードブロックは出力しないでください。"
 )
 
-USER_PROMPT_TEMPLATE = """以下のニュース記事から、記事の内容に基づく4択クイズを1問作成してください。
+USER_PROMPT_TEMPLATE = """以下の {n} 件のニュース記事から、4択クイズを記事ごとに1問ずつ、合計 {n} 問作成してください。
 
 # 条件
+- 1問目は記事1、2問目は記事2…のように、各問題は対応する記事の内容から作り、記事の順番どおりに並べる
+- 同じ内容の記事が複数ある場合も、問題同士は重複させない
 - 問題文は記事を読めば答えられる内容にする
 - 選択肢はちょうど4つ。正解は1つだけで、選択肢同士は重複させない
 - 正解の選択肢は、回答欄に手入力しやすい短い単語・語句にする（目安：15文字以内。記号や補足説明を含めない）
@@ -35,11 +37,18 @@ USER_PROMPT_TEMPLATE = """以下のニュース記事から、記事の内容に
 - answer_index は正解の選択肢の位置（0〜3）
 - 解説は記事の内容に基づいて1〜2文で書く
 
-# 出力形式（この JSON オブジェクトのみを出力）
-{"question": "問題文", "choices": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"], "answer_index": 0, "explanation": "解説"}
+# 出力形式（この JSON オブジェクトのみを出力。quizzes はちょうど {n} 要素）
+{{"quizzes": [{{"question": "問題文", "choices": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"], "answer_index": 0, "explanation": "解説"}}]}}
 
 # 記事
 """
+
+
+def build_user_prompt(article_texts):
+    articles = '\n\n'.join(
+        f"## 記事{i}\n{text}" for i, text in enumerate(article_texts, start=1)
+    )
+    return USER_PROMPT_TEMPLATE.format(n=len(article_texts)) + articles
 
 
 class QuizGenerationError(Exception):
@@ -181,6 +190,27 @@ def validate_quiz(data):
     }
 
 
+def validate_quiz_set(data, expected_count):
+    """
+    {"quizzes": [...]} を検証する。問題数がちょうど expected_count で、すべての問題が有効な場合のみ通す
+    （1問でも不正なら全体を不正とし、別プロバイダで作り直す）。
+    """
+    quizzes = data.get('quizzes')
+    if not isinstance(quizzes, list):
+        raise ValueError("quizzes must be a list")
+    if len(quizzes) != expected_count:
+        raise ValueError(f"expected {expected_count} quizzes, got {len(quizzes)}")
+    validated = []
+    for i, item in enumerate(quizzes, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"quiz {i}: not an object")
+        try:
+            validated.append(validate_quiz(item))
+        except ValueError as e:
+            raise ValueError(f"quiz {i}: {e}") from None
+    return validated
+
+
 # ---------------------------------------------------------------------------
 # プロバイダ呼び出し
 # ---------------------------------------------------------------------------
@@ -221,13 +251,6 @@ def _complete(client, messages, **kwargs):
     return response.choices[0].message.content, getattr(response, 'model', None)
 
 
-def _parse_and_validate(content):
-    try:
-        return validate_quiz(_parse_json(content))
-    except ValueError as e:
-        raise _ProviderFailure(f"invalid_output ({e})") from None
-
-
 def _call_cerebras(config, messages):
     client = OpenAI(
         api_key=config['api_key'],
@@ -243,7 +266,7 @@ def _call_cerebras(config, messages):
         # このモデルは既定で推論が high になりトークンを浪費するため無効化する
         extra_body={'reasoning_effort': 'none'},
     )
-    return _parse_and_validate(content), config['model']
+    return content, config['model']
 
 
 def _call_openrouter(config, messages):
@@ -265,25 +288,29 @@ def _call_openrouter(config, messages):
         # 複数モデルを渡し、OpenRouter 側の自動フォールバックを利用する
         extra_body={'models': models},
     )
-    return _parse_and_validate(content), served_model or models[0]
+    return content, served_model or models[0]
 
 
 # ---------------------------------------------------------------------------
 # 公開関数
 # ---------------------------------------------------------------------------
 
-def generate_quiz(article_text):
+def generate_quizzes(article_texts):
     """
-    記事本文から4択クイズを1問生成する。
+    記事本文のリストから、記事ごとに1問ずつ4択クイズを1回の LLM 呼び出しで生成する。
 
     Returns:
-        dict: question, choices(4), answer_index, answer(= choices[answer_index]), explanation
+        list[dict]: 記事と同じ順番のクイズ。各要素は
+            question, choices(4), answer_index, answer(= choices[answer_index]), explanation
     Raises:
         QuizGenerationError: すべてのプロバイダで生成できなかった場合
     """
+    if not article_texts:
+        raise ValueError("article_texts must not be empty")
+    expected = len(article_texts)
     messages = [
         {'role': 'system', 'content': SYSTEM_PROMPT},
-        {'role': 'user', 'content': USER_PROMPT_TEMPLATE + article_text},
+        {'role': 'user', 'content': build_user_prompt(article_texts)},
     ]
 
     providers = [
@@ -297,17 +324,22 @@ def generate_quiz(article_text):
             failures.append(f"{name}: not_configured")
             continue
         try:
-            quiz, model = call(config, messages)
+            content, model = call(config, messages)
+            try:
+                quizzes = validate_quiz_set(_parse_json(content), expected)
+            except ValueError as e:
+                raise _ProviderFailure(f"invalid_output ({e})") from None
         except Exception as e:
             f = e if isinstance(e, _ProviderFailure) else _classify_api_error(e)
             logger.log(f.log_level, "LLM provider=%s failed: %s -> フォールバックします", name, f.reason)
             failures.append(f"{name}: {f.reason}")
             continue
         if failures:
-            logger.info("クイズ生成成功 provider=%s model=%s (フォールバック理由: %s)", name, model, '; '.join(failures))
+            logger.info("クイズ生成成功 provider=%s model=%s count=%d (フォールバック理由: %s)",
+                        name, model, expected, '; '.join(failures))
         else:
-            logger.info("クイズ生成成功 provider=%s model=%s", name, model)
-        return quiz
+            logger.info("クイズ生成成功 provider=%s model=%s count=%d", name, model, expected)
+        return quizzes
 
     logger.error("すべての LLM プロバイダでクイズ生成に失敗しました: %s", '; '.join(failures))
     raise QuizGenerationError('; '.join(failures))

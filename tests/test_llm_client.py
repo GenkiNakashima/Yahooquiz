@@ -24,6 +24,10 @@ VALID_QUIZ = {
 }
 
 
+def _quiz_set(*quizzes):
+    return json.dumps({'quizzes': list(quizzes)}, ensure_ascii=False)
+
+
 def _response(content, model='served-model'):
     return SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
@@ -96,9 +100,9 @@ def _calls(providers, base_url):
 # ---------------------------------------------------------------------------
 
 def test_cerebras_success(env, providers):
-    providers['results'][CEREBRAS_URL] = _response(json.dumps(VALID_QUIZ, ensure_ascii=False))
+    providers['results'][CEREBRAS_URL] = _response(_quiz_set(VALID_QUIZ))
 
-    quiz = llm_client.generate_quiz(ARTICLE)
+    (quiz,) = llm_client.generate_quizzes([ARTICLE])
 
     assert quiz == {**VALID_QUIZ, 'answer': '政策金利'}
     assert _calls(providers, OPENROUTER_URL) == []
@@ -117,9 +121,9 @@ def test_cerebras_success(env, providers):
 
 def test_cerebras_429_falls_back_to_openrouter_without_retry(env, providers):
     providers['results'][CEREBRAS_URL] = _status_error(openai.RateLimitError, 429)
-    providers['results'][OPENROUTER_URL] = _response(json.dumps(VALID_QUIZ), model='vendor/model-b:free')
+    providers['results'][OPENROUTER_URL] = _response(_quiz_set(VALID_QUIZ), model='vendor/model-b:free')
 
-    quiz = llm_client.generate_quiz(ARTICLE)
+    (quiz,) = llm_client.generate_quizzes([ARTICLE])
 
     assert quiz['answer'] == '政策金利'
     # 待機・リトライせずに1回だけ呼んでフォールバックする
@@ -139,9 +143,9 @@ def test_cerebras_429_falls_back_to_openrouter_without_retry(env, providers):
 
 def test_cerebras_invalid_json_falls_back_to_openrouter(env, providers):
     providers['results'][CEREBRAS_URL] = _response('{"question": "途中で切れた')
-    providers['results'][OPENROUTER_URL] = _response(json.dumps(VALID_QUIZ))
+    providers['results'][OPENROUTER_URL] = _response(_quiz_set(VALID_QUIZ))
 
-    quiz = llm_client.generate_quiz(ARTICLE)
+    (quiz,) = llm_client.generate_quizzes([ARTICLE])
 
     assert quiz['question'] == VALID_QUIZ['question']
     assert len(_calls(providers, OPENROUTER_URL)) == 1
@@ -152,7 +156,7 @@ def test_both_providers_fail_raises(env, providers):
     providers['results'][OPENROUTER_URL] = _status_error(openai.InternalServerError, 503)
 
     with pytest.raises(QuizGenerationError) as excinfo:
-        llm_client.generate_quiz(ARTICLE)
+        llm_client.generate_quizzes([ARTICLE])
 
     assert 'rate_limited (429)' in str(excinfo.value)
     assert 'server_error (503)' in str(excinfo.value)
@@ -170,10 +174,10 @@ def test_both_providers_fail_raises(env, providers):
 ])
 def test_cerebras_transient_errors_fall_back(env, providers, caplog, error, reason):
     providers['results'][CEREBRAS_URL] = error
-    providers['results'][OPENROUTER_URL] = _response(json.dumps(VALID_QUIZ))
+    providers['results'][OPENROUTER_URL] = _response(_quiz_set(VALID_QUIZ))
 
     with caplog.at_level(logging.INFO, logger='llm_client'):
-        llm_client.generate_quiz(ARTICLE)
+        llm_client.generate_quizzes([ARTICLE])
 
     assert any(reason in r.getMessage() and r.levelno == logging.WARNING for r in caplog.records)
 
@@ -185,10 +189,10 @@ def test_cerebras_transient_errors_fall_back(env, providers, caplog, error, reas
 ])
 def test_cerebras_client_errors_fall_back_with_error_log(env, providers, caplog, cls, status):
     providers['results'][CEREBRAS_URL] = _status_error(cls, status)
-    providers['results'][OPENROUTER_URL] = _response(json.dumps(VALID_QUIZ))
+    providers['results'][OPENROUTER_URL] = _response(_quiz_set(VALID_QUIZ))
 
     with caplog.at_level(logging.INFO, logger='llm_client'):
-        llm_client.generate_quiz(ARTICLE)
+        llm_client.generate_quizzes([ARTICLE])
 
     assert any(f'client_error ({status})' in r.getMessage() and r.levelno == logging.ERROR
                for r in caplog.records)
@@ -207,27 +211,27 @@ def test_cerebras_client_errors_fall_back_with_error_log(env, providers, caplog,
     ['not', 'an', 'object'],
 ])
 def test_validation_failure_falls_back(env, providers, broken):
-    providers['results'][CEREBRAS_URL] = _response(json.dumps(broken, ensure_ascii=False))
-    providers['results'][OPENROUTER_URL] = _response(json.dumps(VALID_QUIZ))
+    providers['results'][CEREBRAS_URL] = _response(_quiz_set(broken))
+    providers['results'][OPENROUTER_URL] = _response(_quiz_set(VALID_QUIZ))
 
-    quiz = llm_client.generate_quiz(ARTICLE)
+    (quiz,) = llm_client.generate_quizzes([ARTICLE])
 
     assert quiz['answer'] == '政策金利'
     assert len(_calls(providers, OPENROUTER_URL)) == 1
 
 
 def test_code_fenced_json_is_accepted(env, providers):
-    fenced = '```json\n' + json.dumps(VALID_QUIZ) + '\n```'
+    fenced = '```json\n' + _quiz_set(VALID_QUIZ) + '\n```'
     providers['results'][CEREBRAS_URL] = _response(fenced)
 
-    assert llm_client.generate_quiz(ARTICLE)['answer'] == '政策金利'
+    assert llm_client.generate_quizzes([ARTICLE])[0]['answer'] == '政策金利'
     assert _calls(providers, OPENROUTER_URL) == []
 
 
 def test_answer_follows_answer_index(env, providers):
-    providers['results'][CEREBRAS_URL] = _response(json.dumps({**VALID_QUIZ, 'answer_index': 2}))
+    providers['results'][CEREBRAS_URL] = _response(_quiz_set({**VALID_QUIZ, 'answer_index': 2}))
 
-    quiz = llm_client.generate_quiz(ARTICLE)
+    (quiz,) = llm_client.generate_quizzes([ARTICLE])
 
     assert quiz['answer_index'] == 2
     assert quiz['answer'] == '最低賃金'
@@ -239,9 +243,9 @@ def test_answer_follows_answer_index(env, providers):
 
 def test_missing_cerebras_key_goes_straight_to_openrouter(env, providers, monkeypatch):
     monkeypatch.delenv('CEREBRAS_API_KEY')
-    providers['results'][OPENROUTER_URL] = _response(json.dumps(VALID_QUIZ))
+    providers['results'][OPENROUTER_URL] = _response(_quiz_set(VALID_QUIZ))
 
-    assert llm_client.generate_quiz(ARTICLE)['answer'] == '政策金利'
+    assert llm_client.generate_quizzes([ARTICLE])[0]['answer'] == '政策金利'
     assert CEREBRAS_URL not in providers['clients']
     assert llm_client.configured_providers() == ['openrouter']
 
@@ -251,7 +255,7 @@ def test_empty_openrouter_models_disables_fallback(env, providers, monkeypatch):
     providers['results'][CEREBRAS_URL] = _status_error(openai.RateLimitError, 429)
 
     with pytest.raises(QuizGenerationError):
-        llm_client.generate_quiz(ARTICLE)
+        llm_client.generate_quizzes([ARTICLE])
     assert OPENROUTER_URL not in providers['clients']
     assert llm_client.configured_providers() == ['cerebras']
 
@@ -262,15 +266,15 @@ def test_no_providers_configured(monkeypatch, providers):
 
     assert llm_client.configured_providers() == []
     with pytest.raises(QuizGenerationError):
-        llm_client.generate_quiz(ARTICLE)
+        llm_client.generate_quizzes([ARTICLE])
 
 
 def test_logs_provider_model_and_reason_without_secrets(env, providers, caplog):
     providers['results'][CEREBRAS_URL] = _status_error(openai.RateLimitError, 429)
-    providers['results'][OPENROUTER_URL] = _response(json.dumps(VALID_QUIZ), model='vendor/model-b:free')
+    providers['results'][OPENROUTER_URL] = _response(_quiz_set(VALID_QUIZ), model='vendor/model-b:free')
 
     with caplog.at_level(logging.DEBUG, logger='llm_client'):
-        llm_client.generate_quiz(ARTICLE)
+        llm_client.generate_quizzes([ARTICLE])
 
     text = '\n'.join(r.getMessage() for r in caplog.records)
     assert 'provider=openrouter model=vendor/model-b:free' in text
@@ -278,3 +282,69 @@ def test_logs_provider_model_and_reason_without_secrets(env, providers, caplog):
     assert CEREBRAS_KEY not in text
     assert OPENROUTER_KEY not in text
     assert ARTICLE not in text
+
+
+# ---------------------------------------------------------------------------
+# 1回の呼び出しで複数問を生成する
+# ---------------------------------------------------------------------------
+
+ARTICLES = [f'記事本文その{i}。内容{i}について報じた。' for i in range(1, 6)]
+
+
+def _quiz_no(i):
+    return {
+        'question': f'問題{i}',
+        'choices': [f'正解{i}', f'誤答{i}a', f'誤答{i}b', f'誤答{i}c'],
+        'answer_index': 0,
+        'explanation': f'解説{i}',
+    }
+
+
+def test_generates_all_quizzes_in_one_call_in_article_order(env, providers):
+    providers['results'][CEREBRAS_URL] = _response(_quiz_set(*[_quiz_no(i) for i in range(1, 6)]))
+
+    quizzes = llm_client.generate_quizzes(ARTICLES)
+
+    assert [q['question'] for q in quizzes] == [f'問題{i}' for i in range(1, 6)]
+    assert [q['answer'] for q in quizzes] == [f'正解{i}' for i in range(1, 6)]
+    (call,) = _calls(providers, CEREBRAS_URL)
+    prompt = call['messages'][-1]['content']
+    for i, article in enumerate(ARTICLES, start=1):
+        assert f'## 記事{i}\n{article}' in prompt
+    assert '合計 5 問' in prompt
+    assert _calls(providers, OPENROUTER_URL) == []
+
+
+@pytest.mark.parametrize('content', [
+    _quiz_set(*[_quiz_no(i) for i in range(1, 5)]),            # 4問しかない
+    _quiz_set(*[_quiz_no(i) for i in range(1, 7)]),            # 6問ある
+    _quiz_set(*[_quiz_no(i) for i in range(1, 5)], {**_quiz_no(5), 'choices': ['a', 'b', 'c']}),  # 1問だけ不正
+    json.dumps({'quizzes': 'not a list'}),
+    json.dumps(_quiz_no(1)),                                     # 1問だけの旧形式
+])
+def test_invalid_quiz_set_falls_back(env, providers, caplog, content):
+    providers['results'][CEREBRAS_URL] = _response(content)
+    providers['results'][OPENROUTER_URL] = _response(_quiz_set(*[_quiz_no(i) for i in range(1, 6)]))
+
+    with caplog.at_level(logging.INFO, logger='llm_client'):
+        quizzes = llm_client.generate_quizzes(ARTICLES)
+
+    assert len(quizzes) == 5
+    assert len(_calls(providers, OPENROUTER_URL)) == 1
+    assert any('invalid_output' in r.getMessage() for r in caplog.records)
+
+
+def test_empty_article_list_is_rejected(env, providers):
+    with pytest.raises(ValueError):
+        llm_client.generate_quizzes([])
+    assert providers['clients'] == {}
+
+
+def test_article_text_with_braces_is_kept_verbatim(env, providers):
+    article = '記事中の {波括弧} と {n} はそのまま渡す'
+    providers['results'][CEREBRAS_URL] = _response(_quiz_set(VALID_QUIZ))
+
+    llm_client.generate_quizzes([article])
+
+    (call,) = _calls(providers, CEREBRAS_URL)
+    assert article in call['messages'][-1]['content']

@@ -22,7 +22,6 @@ def init_db():
 
 def get_db():
     """Get Firestore client"""
-    global _db
     if _db is None:
         init_db()
     if _db is None:

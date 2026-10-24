@@ -1,7 +1,6 @@
 # app.py
 from flask import Flask, render_template, request, session, redirect, url_for, send_from_directory
 from flask_cors import CORS
-from datetime import datetime
 from honban import QuizGenerator
 import llm_client
 from llm_client import QuizGenerationError

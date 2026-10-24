@@ -1,6 +1,6 @@
 # services/user_service.py
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from db import get_db
 from services.auth import (
     hash_password,

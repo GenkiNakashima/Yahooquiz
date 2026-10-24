@@ -231,3 +231,66 @@ def test_storage_failure_while_answering_shows_message(game):
     assert response.status_code == 503
     with client.session_transaction() as sess:
         assert sess['round'] == 0
+
+
+def _start(game, quizzes=None):
+    client = game['client']
+    client.post('/game', data={'ai_level': 'normal'})
+    if quizzes is not None:
+        (quiz_set_id,) = game['store']
+        game['store'][quiz_set_id] = quizzes
+    return client
+
+
+def test_quiz_page_shows_four_choice_buttons_without_revealing_the_answer_index(game):
+    quiz = {**_quiz(1), 'choices': ['誤答A', '誤答B', '正解1', '誤答C'], 'answer_index': 2}
+    client = _start(game, [quiz] * 5)
+
+    page = client.get('/quiz').get_data(as_text=True)
+
+    assert page.count('class="choice-btn"') == 4
+    for i, text in enumerate(quiz['choices']):
+        assert f'name="choice" value="{i}"' in page and text in page
+    assert 'answer_index' not in page
+    assert 'name="answer"' not in page
+
+
+@pytest.mark.parametrize('choice, expected', [
+    ('2', 'correct'),
+    ('0', 'wrong'),
+    ('9', 'wrong'),
+    ('abc', 'wrong'),
+    ('', 'wrong'),
+])
+def test_choice_is_judged_by_index(game, choice, expected):
+    quiz = {**_quiz(1), 'choices': ['誤答A', '誤答B', '正解1', '誤答C'], 'answer_index': 2}
+    client = _start(game, [quiz] * 5)
+    client.get('/quiz')
+
+    client.post('/quiz', data={'time': '1', 'choice': choice})
+
+    (results,) = game['results'].values()
+    assert results == {'0': expected}
+
+
+def test_quiz_without_choices_falls_back_to_text_answer(game):
+    quiz = {k: v for k, v in _quiz(1).items() if k not in ('choices', 'answer_index')}
+    client = _start(game, [quiz] * 5)
+
+    page = client.get('/quiz').get_data(as_text=True)
+    client.post('/quiz', data={'time': '1', 'answer': '正解1'})
+
+    assert 'name="answer"' in page and 'name="choice"' not in page
+    (results,) = game['results'].values()
+    assert results == {'0': 'correct'}
+
+
+def test_empty_text_answer_is_wrong(game):
+    quiz = {k: v for k, v in _quiz(1).items() if k not in ('choices', 'answer_index')}
+    client = _start(game, [{**quiz, 'answer': ''}] * 5)
+    client.get('/quiz')
+
+    client.post('/quiz', data={'time': '1', 'answer': ''})
+
+    (results,) = game['results'].values()
+    assert results == {'0': 'wrong'}

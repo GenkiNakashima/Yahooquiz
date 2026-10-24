@@ -163,6 +163,17 @@ def game():
        return redirect(url_for('quiz'))
    return render_template('game.html')
 
+def _is_correct_answer(quiz_data, form):
+    """4択なら選んだ選択肢の番号（choice）で、選択肢のない問題なら回答の文字列で正誤を判定する"""
+    if quiz_data.get('choices') and 'choice' in form:
+        try:
+            return int(form['choice']) == quiz_data.get('answer_index')
+        except (TypeError, ValueError):
+            return False
+    user_answer = form.get('answer', '').strip().lower()
+    return bool(user_answer) and user_answer == quiz_data.get('answer', '').lower()
+
+
 @app.route('/quiz', methods=['GET', 'POST'])
 def quiz():
     """クイズページ"""
@@ -189,6 +200,8 @@ def quiz():
                             article_content=quiz_data['article_content'],
                             article_url=quiz_data['article_url'],
                             article_title=quiz_data['article_title'],
+                            # 選択肢の文字列だけを渡す（answer_index は画面に出さない）
+                            choices=quiz_data.get('choices'),
                             round=session['round'] + 1,
                             total=session['total_rounds'],
                             ai_level=ai_level,
@@ -208,14 +221,10 @@ def quiz():
         
         if player_time < ai_time:
             print("\n✨ プレイヤーが早押し成功！")
-            user_answer = request.form.get('answer', '').strip().lower()
-            correct_answer = quiz_data.get('answer', '').lower()
-            
             print(f"問題: {quiz_data.get('question')}")
-            print(f"プレイヤーの回答: {user_answer}")
-            print(f"正解: {correct_answer}")
+            print(f"正解: {quiz_data.get('answer')}")
             
-            result = 'correct' if user_answer == correct_answer else 'wrong'
+            result = 'correct' if _is_correct_answer(quiz_data, request.form) else 'wrong'
         else:
             print("\n🤖 AIが早押し成功！")
             ai_correct = quiz_generator.simulate_ai_answer(ai_level)

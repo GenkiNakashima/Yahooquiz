@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p /app/migrations /app/services /app/models /app/middleware
+RUN mkdir -p /app/services /app/middleware
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

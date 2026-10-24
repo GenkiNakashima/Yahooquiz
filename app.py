@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import database (Firestore) and API routes
-from db import init_db_pool, close_db_pool
+from db import init_db
 from api_routes import api
 from middleware.security import setup_security_headers
 
@@ -39,7 +39,7 @@ app.register_blueprint(api)
 
 # Initialize Firestore
 try:
-    init_db_pool()
+    init_db()
     logger.info("Firestore client initialized")
 except Exception as e:
     logger.warning(f"Firestore initialization failed: {e}. Some features may be unavailable.")
@@ -70,10 +70,6 @@ def seed_icons_if_empty():
         logger.warning(f"Icon seeding failed: {e}")
 
 seed_icons_if_empty()
-
-# Register cleanup function to close pool on app shutdown
-import atexit
-atexit.register(close_db_pool)
 
 # QuizGeneratorのインスタンスを作成（LLM の設定は llm_client が環境変数から読み込む）
 llm_providers = llm_client.configured_providers()

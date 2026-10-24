@@ -7,8 +7,8 @@ logger = logging.getLogger(__name__)
 
 _db = None
 
-def init_db_pool():
-    """Initialize Firestore client (replaces PostgreSQL pool)"""
+def init_db():
+    """Initialize Firestore client"""
     global _db
     try:
         if not firebase_admin._apps:
@@ -24,7 +24,7 @@ def get_db():
     """Get Firestore client"""
     global _db
     if _db is None:
-        init_db_pool()
+        init_db()
     if _db is None:
         raise Exception("Firestore client not available")
     return _db
@@ -38,7 +38,3 @@ def check_db_health():
     except Exception as e:
         logger.error(f"Firestore health check failed: {e}")
         return False
-
-def close_db_pool():
-    """No-op for Firestore (kept for compatibility)"""
-    pass

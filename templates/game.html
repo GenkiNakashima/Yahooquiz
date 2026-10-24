@@ -75,6 +75,12 @@
     .diff-btn { width: 100%; max-width: 300px; }
     .section-title { font-size: 30px; }
   }
+  .diff-btn:disabled { cursor: wait; opacity: 0.55; transform: none; }
+  .generating-message {
+    margin-top: 24px; text-align: center;
+    font-family: var(--font-body); font-size: 14px; letter-spacing: 0.05em;
+    color: var(--charcoal);
+  }
 </style>
 </head>
 <body>
@@ -112,7 +118,7 @@
 
   <div class="connector"></div>
 
-  <form action="/game" method="post">
+  <form action="/game" method="post" id="levelForm">
     <div class="difficulty-wrap">
       <button type="submit" name="ai_level" value="weak" class="diff-btn easy">
         <span class="diff-icon">🌱</span>
@@ -133,6 +139,9 @@
         <span class="diff-tag">Hard</span>
       </button>
     </div>
+    <p id="generatingMessage" class="generating-message" hidden>
+      ニュース記事から問題を作成中です…（数十秒かかることがあります）
+    </p>
   </form>
 </main>
 
@@ -157,6 +166,36 @@ if (hamburgerBtn && topbarNav) {
     }
   });
 }
+
+// 問題の生成中に二重送信されないようにする（LLM のレート制限を無駄に消費しないため）
+const levelForm = document.getElementById('levelForm');
+const generatingMessage = document.getElementById('generatingMessage');
+levelForm.addEventListener('submit', (e) => {
+  if (levelForm.dataset.submitting) {
+    e.preventDefault();
+    return;
+  }
+  levelForm.dataset.submitting = '1';
+  // 無効化したボタンの値は送信されないため、押されたボタンの値を hidden で送る
+  if (e.submitter && e.submitter.name) {
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = e.submitter.name;
+    hidden.value = e.submitter.value;
+    levelForm.appendChild(hidden);
+  }
+  levelForm.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+  generatingMessage.hidden = false;
+});
+// ブラウザの「戻る」で復元された場合は操作できる状態に戻す
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) {
+    delete levelForm.dataset.submitting;
+    levelForm.querySelectorAll('input[type=hidden]').forEach((h) => h.remove());
+    levelForm.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+    generatingMessage.hidden = true;
+  }
+});
 </script>
 </body>
 </html>

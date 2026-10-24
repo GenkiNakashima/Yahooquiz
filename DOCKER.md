@@ -1,103 +1,82 @@
 # Docker実行ガイド
 
-## 方法1: Docker Compose（推奨）
+データベースは Cloud Firestore を使います（コンテナ内に DB は立てません）。
+コンテナからは、手元の Application Default Credentials（ADC）を使って Firestore に接続します。
 
-PostgreSQLとアプリケーションを両方Dockerで起動します。
+## 方法1: Docker Compose（推奨）
 
 ### 手順
 
-1. **環境変数の設定**
+1. **Firestore の認証情報を用意（最初に1回だけ）**
    ```bash
-   # .env.dockerファイルを編集して、実際のAPIキーを設定
+   gcloud auth application-default login
+   ```
+   `~/.config/gcloud/application_default_credentials.json` が作られ、コンテナに読み取り専用でマウントされます。
+   サービスアカウントキーを使う場合は、`.env.docker` の `GOOGLE_ADC_FILE` にそのファイルのパスを指定してください。
+
+2. **環境変数の設定**
+   ```bash
+   cp .env.docker.example .env.docker
+   # .env.docker を編集して GOOGLE_CLOUD_PROJECT と
+   # CEREBRAS_API_KEY / OPENROUTER_API_KEY / OPENROUTER_MODELS などを設定
    ```
 
-2. **起動**
+3. **起動**
    ```bash
    docker-compose --env-file .env.docker up --build
    ```
 
-3. **アクセス**
+4. **アクセス**
    - アプリケーション: http://localhost:8080
-   - PostgreSQL: localhost:5432
 
-4. **停止**
+5. **停止**
    ```bash
    docker-compose down
    ```
 
-5. **データベースも削除して完全にクリーンアップ**
-   ```bash
-   docker-compose down -v
-   ```
+## 方法2: docker run
 
-## 方法2: ホストのPostgreSQLに接続
-
-既存のローカルPostgreSQLを使用する場合。
-
-### 手順
-
-1. **PostgreSQLがホストで起動していることを確認**
-   ```bash
-   psql -U nakashimagenki -d yahooquiz -c "SELECT 1"
-   ```
-
-2. **PostgreSQLがTCP/IP接続を許可していることを確認**
-
-   `postgresql.conf`で以下を確認:
-   ```
-   listen_addresses = '*'  # または 'localhost'
-   ```
-
-   `pg_hba.conf`で以下を確認:
-   ```
-   host    all             all             0.0.0.0/0            trust
-   # または
-   host    all             all             127.0.0.1/32         trust
-   ```
-
-3. **Dockerコンテナを起動**
-   ```bash
-   docker run -p 8080:8080 --env-file .env.docker-host yahooquiz-app
-   ```
-
-   または、docker buildしてから:
-   ```bash
-   docker build -t yahooquiz-app .
-   docker run -p 8080:8080 --env-file .env.docker-host yahooquiz-app
-   ```
+```bash
+docker build -t yahooquiz-app .
+docker run -p 8080:8080 \
+  --env-file .env.docker \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/secrets/adc.json \
+  -v ~/.config/gcloud/application_default_credentials.json:/secrets/adc.json:ro \
+  yahooquiz-app
+```
 
 ## トラブルシューティング
 
-### データベース接続エラー
+### Firestore に接続できない
 
-**エラー**: `connection to server at "localhost" ... Connection refused`
+**ログ**: `Failed to initialize Firestore: Your default credentials were not found.`
+または `Firestore initialization failed ... Some features may be unavailable.`
+
+アプリは起動しますが、ログイン・ランキング・ゲームなど DB を使う機能が動きません。
 
 **解決方法**:
-- Docker Composeを使用している場合: `DATABASE_URL`が`db`ホストを指しているか確認
-- ホストのPostgreSQLを使用している場合: `host.docker.internal`を使用しているか確認
+- `gcloud auth application-default login` を実行したか確認
+- `.env.docker` の `GOOGLE_CLOUD_PROJECT` が正しいプロジェクト ID か確認
+- `GOOGLE_ADC_FILE` を指定している場合、そのファイルが存在するか確認
+- そのアカウント（またはサービスアカウント）に Firestore への読み書き権限（例: `roles/datastore.user`）があるか確認
 
 ### 環境変数が読み込まれない
 
 **解決方法**:
 ```bash
 # 環境変数を確認
-docker-compose config
+docker-compose --env-file .env.docker config
 
 # または個別に確認
-docker run --env-file .env.docker yahooquiz-app env | grep GROQ_API_KEY
-```
-
-### マイグレーションエラー
-
-**解決方法**:
-```bash
-# データベースを初期化
-docker-compose exec app python migrations/init_db.py
+docker run --env-file .env.docker yahooquiz-app env | grep -E '^(CEREBRAS|OPENROUTER|LLM)_' | sed 's/_API_KEY=.*/_API_KEY=(設定済み)/'
 ```
 
 ## 本番環境デプロイ
 
 ### Google Cloud Run
+
+Cloud Run 上では、サービスに割り当てたサービスアカウントで Firestore に自動的に認証されます
+（認証情報ファイルの設定は不要です。サービスアカウントに Firestore の読み書き権限が必要です）。
 
 1. **Container Registryにプッシュ**
    ```bash
@@ -111,5 +90,6 @@ docker-compose exec app python migrations/init_db.py
      --platform managed \
      --region asia-northeast1 \
      --allow-unauthenticated \
-     --set-env-vars DATABASE_URL=YOUR_DB_URL,GROQ_API_KEY=YOUR_KEY,JWT_SECRET_KEY=YOUR_SECRET
+     --set-env-vars '^@^JWT_SECRET_KEY=YOUR_SECRET@CEREBRAS_API_KEY=YOUR_CEREBRAS_KEY@CEREBRAS_BASE_URL=https://api.cerebras.ai/v1@CEREBRAS_MODEL=qwen-3.8-27b@OPENROUTER_API_KEY=YOUR_OPENROUTER_KEY@OPENROUTER_BASE_URL=https://openrouter.ai/api/v1@OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free'
    ```
+   ※ `OPENROUTER_MODELS` の値にカンマを含むため、`^@^` で区切り文字を `@` に変更しています。

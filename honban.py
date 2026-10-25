@@ -40,6 +40,18 @@ SAMPLE_ARTICLES = [
 ]
 
 
+def _shuffle_choices(quiz):
+    """LLM は正解を先頭に置きがちなため、選択肢の順番をシャッフルして正解の位置を偏らせない"""
+    choices = quiz.get('choices')
+    if not choices:
+        return
+    correct = choices[quiz['answer_index']]
+    shuffled = random.sample(choices, len(choices))
+    quiz['choices'] = shuffled
+    quiz['answer_index'] = shuffled.index(correct)
+    quiz['answer'] = correct
+
+
 class QuizGenerator:
     def __init__(self):
         self.headers = {
@@ -219,6 +231,7 @@ class QuizGenerator:
         articles = self.get_news_articles(count, genre)
         quizzes = llm_client.generate_quizzes([a['content'] for a in articles])
         for quiz, article in zip(quizzes, articles):
+            _shuffle_choices(quiz)
             # クイズデータに記事情報を追加
             quiz['article_content'] = article['content']
             quiz['article_url'] = article['url']

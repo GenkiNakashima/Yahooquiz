@@ -151,3 +151,32 @@ def test_create_quiz_set_calls_llm_once_and_attaches_articles(fake_web, monkeypa
         assert quiz['article_content'] == text
         assert quiz['article_url'].startswith('https://full.test/')
         assert quiz['article_title'].startswith('タイトル')
+
+
+def test_choices_are_shuffled_and_answer_index_follows(fake_web, monkeypatch):
+    """LLM が正解を先頭に置いても、正解の位置が偏らず、answer / answer_index が正しく対応する"""
+    def fake_generate(texts):
+        return [{'question': f'Q{i}', 'choices': [f'正解{i}', 'b', 'c', 'd'], 'answer_index': 0,
+                 'answer': f'正解{i}', 'explanation': 'e'} for i in range(len(texts))]
+
+    monkeypatch.setattr(honban.llm_client, 'generate_quizzes', fake_generate)
+    generator = QuizGenerator()
+
+    positions = []
+    for _ in range(8):
+        for i, quiz in enumerate(generator.create_quiz_set(5)):
+            assert sorted(quiz['choices']) == sorted([f'正解{i}', 'b', 'c', 'd'])
+            assert quiz['choices'][quiz['answer_index']] == quiz['answer'] == f'正解{i}'
+            positions.append(quiz['answer_index'])
+
+    # 40問で正解が毎回同じ位置になる確率は無視できるほど小さい
+    assert len(set(positions)) > 1
+
+
+def test_quiz_without_choices_is_left_as_is(fake_web, monkeypatch):
+    monkeypatch.setattr(honban.llm_client, 'generate_quizzes',
+                        lambda texts: [{'question': 'Q', 'answer': 'A'} for _ in texts])
+
+    quizzes = QuizGenerator().create_quiz_set(2)
+
+    assert all('choices' not in q and q['answer'] == 'A' for q in quizzes)

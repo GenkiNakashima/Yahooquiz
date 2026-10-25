@@ -1,8 +1,8 @@
 # api_routes.py
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from services.auth import require_auth
 from services.user_service import register_user, login_user, get_user_by_id, refresh_access_token
-from services.match_service import create_match, get_user_match_history, get_leaderboard
+from services.match_service import record_game_result, get_user_match_history, get_leaderboard
 from services.icon_service import get_available_icons, purchase_icon, get_user_icons, get_points_transactions
 from middleware.security import validate_json, sanitize_input, validate_uuid
 import logging
@@ -132,33 +132,22 @@ def api_get_my_matches():
 
 @api.route('/matches', methods=['POST'])
 @require_auth
-@validate_json
 def api_create_match():
-    """Create a new match and record results"""
-    data = request.get_json()
-    current_user_id = request.current_user['id']
+    """
+    現在のセッションで遊び終えたゲームの結果を、ログイン中のユーザーの対戦結果として記録する。
+    勝敗・スコアはサーバー側に記録した回答結果から確定する（クライアントからは指定できない）。
+    1ゲームにつき1回だけ記録できる。
+    """
+    data = request.get_json(silent=True) or {}
+    if 'players' in data:
+        return jsonify({'error': 'players cannot be specified; match results are determined by the server'}), 400
 
-    match_type = sanitize_input(data.get('match_type', '1v1'), 50)
-    players = data.get('players', [])
-    metadata = data.get('metadata')
+    quiz_set_id = session.get('quiz_set_id')
+    if not quiz_set_id:
+        return jsonify({'error': 'No game to record'}), 400
 
-    # Validate players data
-    if not isinstance(players, list):
-        return jsonify({'error': 'Players must be a list'}), 400
-
-    # Ensure all player IDs are valid UUIDs
-    for player in players:
-        if 'user_id' not in player:
-            return jsonify({'error': 'Each player must have a user_id'}), 400
-        if not validate_uuid(player['user_id']):
-            return jsonify({'error': 'Invalid user_id format'}), 400
-
-    success, result = create_match(match_type, players, metadata)
-
-    if success:
-        return jsonify(result), 201
-    else:
-        return jsonify(result), 400
+    _, result, status = record_game_result(request.current_user['id'], quiz_set_id)
+    return jsonify(result), status
 
 # ============================================================================
 # Icon Routes

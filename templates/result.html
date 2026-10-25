@@ -229,26 +229,17 @@ if (accessToken) {
 }
 
 async function submitMatchResult() {
-  const playerScore = {{ player_score }};
-  const aiScore = {{ ai_score }};
-  const aiLevel = "{{ ai_level }}";
-  const playerWon = playerScore > aiScore;
+  // 勝敗・スコアはサーバー側の回答記録から確定する（このページからは送らない）。
+  // 同じゲームは1回しか記録されないため、再読み込みしても二重にポイントは付かない。
   try {
-    const userRes = await fetch('/api/users/me', { headers: { 'Authorization': `Bearer ${accessToken}` } });
-    if (!userRes.ok) return;
-    const userData = await userRes.json();
     const r = await fetch('/api/matches', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        match_type: '1v1_ai',
-        players: [{ user_id: userData.id, score: playerScore, is_winner: playerWon }],
-        metadata: { ai_level: aiLevel, ai_score: aiScore, quiz_type: 'news' }
-      })
+      body: JSON.stringify({})
     });
     if (r.ok) {
       const data = await r.json();
-      if (playerWon && data.points_awarded) {
+      if (data.is_winner && data.points_awarded) {
         const banner = document.getElementById('pointsMessage');
         document.getElementById('pointsText').textContent = `+${data.points_awarded} ポイント獲得！`;
         banner.style.display = 'block';

@@ -40,8 +40,8 @@ def app_module():
 @pytest.fixture
 def game(app_module, monkeypatch):
     """Firestore の代わりに辞書へ保存し、クイズ生成の呼び出し（問題数・ジャンル）を記録する"""
-    state = {'store': {}, 'generate_calls': [], 'generate_error': None,
-             'save_error': None, 'get_error': None}
+    state = {'store': {}, 'metadata': {}, 'results': {}, 'generate_calls': [], 'generate_error': None,
+             'save_error': None, 'get_error': None, 'record_error': None}
 
     def create_quiz_set(count, genre='business'):
         state['generate_calls'].append((count, genre))
@@ -49,12 +49,22 @@ def game(app_module, monkeypatch):
             raise state['generate_error']
         return [_quiz(i) for i in range(1, count + 1)]
 
-    def save_quiz_set(quizzes):
+    def save_quiz_set(quizzes, metadata=None):
         if state['save_error']:
             raise state['save_error']
         quiz_set_id = str(uuid.uuid4())
         state['store'][quiz_set_id] = quizzes
+        state['metadata'][quiz_set_id] = metadata
+        state['results'][quiz_set_id] = {}
         return quiz_set_id
+
+    def record_answer(quiz_set_id, index, result):
+        # 本物と同じく、同じラウンドは最初の結果を採用する
+        if state['record_error']:
+            raise state['record_error']
+        results = state['results'][quiz_set_id]
+        results.setdefault(str(index), result)
+        return results[str(index)], dict(results)
 
     def get_quiz(quiz_set_id, index):
         if state['get_error']:
@@ -65,6 +75,7 @@ def game(app_module, monkeypatch):
     monkeypatch.setattr(app_module.quiz_generator, 'create_quiz_set', create_quiz_set)
     monkeypatch.setattr(app_module, 'save_quiz_set', save_quiz_set)
     monkeypatch.setattr(app_module, 'get_quiz', get_quiz)
+    monkeypatch.setattr(app_module, 'record_answer', record_answer)
     state['client'] = app_module.app.test_client()
     return state
 
@@ -164,3 +175,59 @@ def test_selected_genre_is_used_for_generation(game):
     client.post('/game', data={'ai_level': 'normal'})
 
     assert game['generate_calls'] == [(5, 'sports')]
+
+
+def test_game_metadata_is_saved_for_match_recording(game):
+    client = game['client']
+    client.post('/genre', data={'genre': 'it'})
+
+    client.post('/game', data={'ai_level': 'strong'})
+
+    (metadata,) = game['metadata'].values()
+    assert metadata == {'ai_level': 'strong', 'genre': 'it'}
+
+
+def test_answers_are_recorded_on_server(game):
+    client = game['client']
+    client.post('/game', data={'ai_level': 'normal'})
+    client.get('/quiz')
+    client.post('/quiz', data={'time': '1', 'answer': '不正解の回答'})
+    client.get('/quiz')
+    client.post('/quiz', data={'time': '1', 'answer': '正解2'})
+
+    (results,) = game['results'].values()
+    assert results == {'0': 'wrong', '1': 'correct'}
+    with client.session_transaction() as sess:
+        assert sess['score'] == {'player': 1, 'ai': 0}
+
+
+def test_replaying_an_old_cookie_cannot_change_an_answer(game):
+    """正解を見た後に回答前の Cookie を送り直しても、最初の回答（不正解）が採用される"""
+    client = game['client']
+    client.post('/game', data={'ai_level': 'normal'})
+    client.get('/quiz')
+    cookie_before_answer = client.get_cookie('session').value
+
+    client.post('/quiz', data={'time': '1', 'answer': '不正解の回答'})
+    client.set_cookie('session', cookie_before_answer)
+    page = client.post('/quiz', data={'time': '1', 'answer': '正解1'}).get_data(as_text=True)
+
+    (results,) = game['results'].values()
+    assert results == {'0': 'wrong'}
+    with client.session_transaction() as sess:
+        assert sess['score'] == {'player': 0, 'ai': 0}
+    # 画面にも最初の結果（不正解）が表示される
+    assert 'result-status wrong' in page and 'result-status correct' not in page
+
+
+def test_storage_failure_while_answering_shows_message(game):
+    client = game['client']
+    client.post('/game', data={'ai_level': 'normal'})
+    client.get('/quiz')
+    game['record_error'] = RuntimeError('db down')
+
+    response = client.post('/quiz', data={'time': '1', 'answer': '正解1'})
+
+    assert response.status_code == 503
+    with client.session_transaction() as sess:
+        assert sess['round'] == 0

@@ -5,7 +5,7 @@ from datetime import datetime
 from honban import QuizGenerator
 import llm_client
 from llm_client import QuizGenerationError
-from services.quiz_set_service import save_quiz_set, get_quiz
+from services.quiz_set_service import save_quiz_set, get_quiz, record_answer, score_from_results
 import os
 import logging
 from dotenv import load_dotenv
@@ -144,12 +144,13 @@ def game():
 
        # 1ゲーム分の問題を1回の LLM 呼び出しでまとめて生成し、Firestore に保存する
        # （記事本文を含むため Cookie には入れず、ID だけをセッションに持つ）
+       genre = session.get('genre', 'business')
        try:
-           quizzes = quiz_generator.create_quiz_set(TOTAL_ROUNDS, session.get('genre', 'business'))
+           quizzes = quiz_generator.create_quiz_set(TOTAL_ROUNDS, genre)
        except QuizGenerationError:
            return render_template('error.html', error_message=QUIZ_GENERATION_ERROR_MESSAGE), 503
        try:
-           quiz_set_id = save_quiz_set(quizzes)
+           quiz_set_id = save_quiz_set(quizzes, metadata={'ai_level': ai_level, 'genre': genre})
        except Exception:
            logger.exception("クイズの保存に失敗しました")
            return render_template('error.html', error_message=QUIZ_STORAGE_ERROR_MESSAGE), 503
@@ -214,33 +215,32 @@ def quiz():
             print(f"プレイヤーの回答: {user_answer}")
             print(f"正解: {correct_answer}")
             
-            if user_answer == correct_answer:
-                session['score']['player'] += 1
-                result = 'correct'
-                print("\n🎉 正解！")
-            else:
-                result = 'wrong'
-                print("\n❌ 不正解...")
-            
-            # プレイヤーが回答した場合のAIの思考メッセージ
-            ai_thinking = "まだ考えていたのに..."
-            
+            result = 'correct' if user_answer == correct_answer else 'wrong'
         else:
             print("\n🤖 AIが早押し成功！")
-            ai_level = session.get('ai_level', 'normal')
             ai_correct = quiz_generator.simulate_ai_answer(ai_level)
-            ai_thinking = quiz_generator.get_ai_thinking_message(ai_level)
             
             print(f"問題: {quiz_data.get('question')}")
             print(f"正解: {quiz_data.get('answer')}")
             
-            if ai_correct:
-                result = 'ai_correct'
-                session['score']['ai'] += 1
-                print("\n🎯 AIが正解！")
-            else:
-                result = 'ai_wrong'
-                print("\n😅 AIが不正解！")
+            result = 'ai_correct' if ai_correct else 'ai_wrong'
+
+        # 回答結果はサーバー側（Firestore）に記録し、得点はその記録から計算する。
+        # 同じラウンドは最初の結果だけを採用するため、Cookie を送り直して回答し直すことはできない。
+        try:
+            result, results = record_answer(session['quiz_set_id'], session['round'], result)
+        except Exception:
+            logger.exception("回答結果の記録に失敗しました")
+            return render_template('error.html', error_message=QUIZ_STORAGE_ERROR_MESSAGE), 503
+        session['score'] = score_from_results(results)
+
+        if result in ('correct', 'wrong'):
+            print("\n🎉 正解！" if result == 'correct' else "\n❌ 不正解...")
+            # プレイヤーが回答した場合のAIの思考メッセージ
+            ai_thinking = "まだ考えていたのに..."
+        else:
+            print("\n🎯 AIが正解！" if result == 'ai_correct' else "\n😅 AIが不正解！")
+            ai_thinking = quiz_generator.get_ai_thinking_message(ai_level)
         
         print(f"プレイヤーの得点: {session['score']['player']}点")
         print(f"AIの得点: {session['score']['ai']}点")

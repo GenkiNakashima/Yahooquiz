@@ -1,334 +1,383 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>アイコンショップ - Yahooquiz</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <style>
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .header h1 {
-            margin: 0;
-            color: #333;
-        }
-        .points {
-            font-size: 24px;
-            font-weight: bold;
-            color: #4CAF50;
-        }
-        .nav {
-            display: flex;
-            gap: 10px;
-        }
-        .nav button {
-            padding: 10px 20px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        .nav button:hover {
-            background: #45a049;
-        }
-        .icons-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-            gap: 20px;
-        }
-        .icon-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        .icon-emoji {
-            font-size: 64px;
-            margin: 20px 0;
-        }
-        .icon-card h3 {
-            margin: 10px 0;
-            color: #333;
-        }
-        .icon-card p {
-            color: #777;
-            font-size: 14px;
-        }
-        .icon-price {
-            font-size: 20px;
-            font-weight: bold;
-            color: #4CAF50;
-            margin: 10px 0;
-        }
-        .buy-btn {
-            width: 100%;
-            padding: 10px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        .buy-btn:hover {
-            background: #45a049;
-        }
-        .buy-btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-        .badge {
-            display: inline-block;
-            padding: 5px 10px;
-            border-radius: 3px;
-            font-size: 12px;
-            margin-top: 10px;
-        }
-        .badge.limited {
-            background: #ff9800;
-            color: white;
-        }
-        .badge.owned {
-            background: #4CAF50;
-            color: white;
-        }
-        .badge.sold-out {
-            background: #f44336;
-            color: white;
-        }
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #777;
-        }
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        .modal.show {
-            display: flex;
-        }
-        .modal-content {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            max-width: 400px;
-            text-align: center;
-        }
-        .modal-content button {
-            margin: 10px 5px;
-            padding: 10px 20px;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>アイコンショップ — JAIJAI</title>
+<link rel="icon" type="image/png" href="/static/images/aiquiz-favicon.png">
+<link rel="stylesheet" href="/static/css/theme.css">
+<style>
+  /* ── Header card ── */
+  .header-card {
+    background: var(--glass-dark);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-light); border-radius: 2px;
+    padding: 36px 48px;
+    display: flex; align-items: center; justify-content: space-between; gap: 32px;
+    margin-bottom: 24px; position: relative; overflow: hidden;
+    animation: fadeUp 0.8s var(--ease) both;
+  }
+  .header-card::before {
+    content: ''; position: absolute;
+    bottom: 0; left: 48px; right: 48px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    opacity: 0.5;
+  }
+  .shop-title {
+    font-family: var(--font-display); font-size: 36px; font-weight: 500;
+    letter-spacing: 0.06em; color: var(--off-white); margin-bottom: 8px;
+  }
+  .shop-points {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-size: 11px; font-weight: 200; letter-spacing: 0.2em;
+    text-transform: uppercase; color: rgba(245,242,236,0.45);
+  }
+  .shop-points .pt-val {
+    font-family: var(--font-display); font-size: 20px; font-weight: 400; color: var(--gold-light);
+  }
+  .header-nav { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .header-nav .nav-btn { color: rgba(245,242,236,0.55); }
+  .header-nav .nav-btn:hover { color: var(--off-white); border-color: var(--border-light); }
+  .header-nav .nav-btn::after { background: var(--gold-light); }
+
+  /* ── Icons grid ── */
+  .icons-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 20px;
+    animation: fadeUp 0.8s var(--ease) 0.15s both;
+  }
+  .icon-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(184,150,46,0.12); border-radius: 2px;
+    padding: 0; overflow: hidden;
+    transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease);
+  }
+  .icon-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(0,0,0,0.1); }
+
+  .icon-card-top {
+    padding: 32px; text-align: center;
+    border-bottom: 1px solid rgba(184,150,46,0.1);
+  }
+  .icon-emoji { font-size: 56px; line-height: 1; margin-bottom: 16px; display: block; }
+  .icon-name {
+    font-family: var(--font-display); font-size: 20px; font-weight: 400;
+    letter-spacing: 0.06em; color: var(--charcoal); margin-bottom: 6px;
+  }
+  .icon-price-row {
+    font-family: var(--font-display); font-size: 18px; font-weight: 300;
+    color: var(--gold); letter-spacing: 0.04em;
+  }
+
+  .icon-card-bottom {
+    padding: 16px 24px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .icon-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 1px;
+    font-size: 8px; font-weight: 300; letter-spacing: 0.2em; text-transform: uppercase;
+  }
+  .badge-limited { background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.3); color: #D4902A; }
+  .badge-owned   { background: rgba(26,90,46,0.1);  border: 1px solid rgba(26,90,46,0.3);  color: #1A5A2E; }
+  .badge-soldout { background: rgba(139,32,32,0.1); border: 1px solid rgba(139,32,32,0.3); color: #8B3030; }
+
+  .buy-btn {
+    padding: 8px 20px; border-radius: 2px;
+    font-family: var(--font-body); font-size: 9px; font-weight: 300;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    cursor: pointer; transition: all 0.3s var(--ease); white-space: nowrap;
+    background: var(--charcoal); border: 1px solid var(--charcoal);
+    color: var(--off-white);
+  }
+  .buy-btn:hover { border-color: var(--gold); }
+  .buy-btn:disabled {
+    background: rgba(26,26,24,0.1); border-color: rgba(26,26,24,0.1);
+    color: rgba(26,26,24,0.3); cursor: not-allowed;
+  }
+  .buy-btn:disabled:hover { border-color: rgba(26,26,24,0.1); }
+
+  .loading-card {
+    grid-column: 1 / -1; padding: 60px;
+    text-align: center; font-size: 11px; font-weight: 200;
+    letter-spacing: 0.2em; text-transform: uppercase; color: rgba(26,26,24,0.35);
+  }
+
+  @media (max-width: 900px) { .header-card { flex-direction: column; align-items: flex-start; } }
+  @media (max-width: 600px) {
+    .header-card { padding: 28px 24px; }
+    .shop-title { font-size: 28px; }
+    .icons-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 400px) { .icons-grid { grid-template-columns: 1fr; } }
+
+  /* ハンバーガーメニューボタン */
+  .hamburger-btn {
+    display: none; /* PCでは非表示 */
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    flex-direction: column;
+    gap: 4px;
+    position: relative;
+    z-index: 11;
+  }
+  .hamburger-line {
+    width: 20px;
+    height: 2px;
+    background: var(--charcoal);
+    transition: all 0.3s var(--ease);
+    transform-origin: center;
+  }
+
+  /* スマホ時のハンバーガーメニュー開閉アニメーション */
+  .hamburger-btn.active .hamburger-line:nth-child(1) {
+    transform: rotate(45deg) translate(5px, 5px);
+  }
+  .hamburger-btn.active .hamburger-line:nth-child(2) {
+    opacity: 0;
+  }
+  .hamburger-btn.active .hamburger-line:nth-child(3) {
+    transform: rotate(-45deg) translate(7px, -6px);
+  }
+
+  /* スマホ時のナビゲーション表示制御 */
+  @media (max-width: 600px) {
+    .hamburger-btn {
+      display: flex; /* スマホで表示 */
+    }
+    .header-nav {
+      position: fixed;
+      top: 0;
+      right: -100%; /* 初期状態で画面外 */
+      width: 280px;
+      height: 100vh;
+      background: var(--glass-dark);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-left: 1px solid var(--border-light);
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 80px 24px 24px;
+      gap: 16px;
+      transition: right 0.3s var(--ease);
+      z-index: 10;
+    }
+    .header-nav.open {
+      right: 0; /* 開いた状態 */
+    }
+    .header-nav .nav-btn {
+      width: 100%;
+      text-align: left;
+      padding: 12px 16px;
+      border-radius: 4px;
+    }
+    .header-nav .nav-btn:hover {
+      background: rgba(245,242,236,0.05);
+    }
+  }
+</style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <div>
-                <h1>アイコンショップ</h1>
-                <p class="points">所持ポイント: <span id="userPoints">0</span></p>
-            </div>
-            <div class="nav">
-                <button onclick="location.href='/dashboard'">ダッシュボード</button>
-                <button onclick="location.href='/'">ゲーム</button>
-                <button onclick="location.href='/leaderboard'">ランキング</button>
-            </div>
-        </div>
 
-        <div id="iconsGrid" class="icons-grid">
-            <div class="loading">アイコンを読み込み中...</div>
-        </div>
+<div class="bg-letters" aria-hidden="true">
+  <span class="bg-letter" style="font-size:280px;top:-40px;left:-30px;transform:rotate(-8deg)">S</span>
+  <span class="bg-letter" style="font-size:200px;top:200px;left:-30px;transform:rotate(5deg)">H</span>
+  <span class="bg-letter" style="font-size:300px;top:-20px;right:-50px;transform:rotate(6deg)">O</span>
+  <span class="bg-letter" style="font-size:220px;top:350px;right:-20px;transform:rotate(-4deg)">P</span>
+  <span class="bg-letter" style="font-size:240px;top:600px;right:-40px;transform:rotate(5deg)">!</span>
+</div>
+
+<div class="page">
+  <div class="header-card">
+    <div>
+      <div class="shop-title">アイコンショップ</div>
+      <div class="shop-points">
+        所持ポイント
+        <span class="pt-val" id="userPoints">—</span>
+        <span style="font-size:9px;color:rgba(212,175,90,0.5)">PT</span>
+      </div>
     </div>
+    <nav class="header-nav">
+      <a href="/" class="nav-btn">ゲーム</a>
+      <a href="/dashboard" class="nav-btn">ダッシュボード</a>
+      <a href="/leaderboard" class="nav-btn">ランキング</a>
+    </nav>
+    <!-- ハンバーガーメニューボタン（スマホ時のみ表示） -->
+    <button class="hamburger-btn" id="hamburgerBtn" aria-label="メニューを開く">
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+    </button>
+  </div>
 
-    <!-- Purchase Confirmation Modal -->
-    <div id="purchaseModal" class="modal">
-        <div class="modal-content">
-            <h2>購入確認</h2>
-            <p id="modalMessage"></p>
-            <div>
-                <button id="confirmBtn" class="buy-btn" style="width: auto;">購入する</button>
-                <button onclick="closePurchaseModal()" style="background: #666;">キャンセル</button>
-            </div>
-        </div>
+  <div id="iconsGrid" class="icons-grid">
+    <div class="loading-card">アイコンを読み込み中...</div>
+  </div>
+</div>
+
+<!-- Purchase modal -->
+<div id="purchaseModal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="corner corner-tl"></div>
+    <div class="corner corner-tr"></div>
+    <div class="modal-title">購入確認</div>
+    <div class="modal-body" id="modalMessage"></div>
+    <div class="modal-actions">
+      <button id="confirmBtn" class="modal-btn modal-btn-confirm">購入する</button>
+      <button onclick="closePurchaseModal()" class="modal-btn modal-btn-cancel">キャンセル</button>
     </div>
+  </div>
+</div>
 
-    <script src="/static/javascript/api.js"></script>
-    <script>
-        const accessToken = localStorage.getItem('access_token');
-        if (!accessToken) {
-            window.location.href = '/login';
-        }
+<script src="/static/javascript/api.js"></script>
+<script>
+const accessToken = localStorage.getItem('access_token');
+if (!accessToken) window.location.href = '/login';
 
-        let currentUserPoints = 0;
-        let selectedIcon = null;
+let currentUserPoints = 0;
+let selectedIcon = null;
 
-        const iconEmojis = {
-            'bronze_badge': '🥉',
-            'silver_badge': '🥈',
-            'gold_badge': '🥇',
-            'platinum_badge': '💎',
-            'diamond_badge': '💠',
-            'quiz_master': '👑'
-        };
+const iconEmojis = {
+  bronze_badge: '🥉', silver_badge: '🥈', gold_badge: '🥇',
+  platinum_badge: '💎', diamond_badge: '💠', quiz_master: '👑'
+};
 
-        async function loadUserPoints() {
-            try {
-                const response = await fetch('/api/users/me', {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
+async function loadUserPoints() {
+  try {
+    const r = await fetch('/api/users/me', { headers: { 'Authorization': `Bearer ${accessToken}` } });
+    if (r.ok) {
+      const user = await r.json();
+      currentUserPoints = user.points;
+      document.getElementById('userPoints').textContent = currentUserPoints.toLocaleString();
+    } else if (r.status === 401) {
+      localStorage.removeItem('access_token');
+      window.location.href = '/login';
+    }
+  } catch (e) { console.error(e); }
+}
 
-                if (response.ok) {
-                    const user = await response.json();
-                    currentUserPoints = user.points;
-                    document.getElementById('userPoints').textContent = currentUserPoints.toLocaleString();
-                } else if (response.status === 401) {
-                    localStorage.removeItem('access_token');
-                    window.location.href = '/login';
-                }
-            } catch (error) {
-                console.error('Error loading user points:', error);
-            }
-        }
+async function loadUserIcons() {
+  try {
+    const r = await fetch('/api/users/me/icons', { headers: { 'Authorization': `Bearer ${accessToken}` } });
+    if (r.ok) {
+      const data = await r.json();
+      return data.icons.map(icon => icon.id);
+    }
+  } catch (e) { console.error(e); }
+  return [];
+}
 
-        async function loadIcons() {
-            try {
-                const response = await fetch('/api/icons');
+async function loadIcons() {
+  try {
+    const r = await fetch('/api/icons');
+    if (r.ok) {
+      const data = await r.json();
+      renderIcons(data.icons);
+    }
+  } catch (e) { console.error(e); }
+}
 
-                if (response.ok) {
-                    const data = await response.json();
-                    renderIcons(data.icons);
-                }
-            } catch (error) {
-                console.error('Error loading icons:', error);
-            }
-        }
+async function renderIcons(icons) {
+  const userIconIds = await loadUserIcons();
+  const grid = document.getElementById('iconsGrid');
+  if (!icons || icons.length === 0) {
+    grid.innerHTML = '<div class="loading-card">アイコンがありません</div>';
+    return;
+  }
+  grid.innerHTML = icons.map(icon => {
+    const owned = userIconIds.includes(icon.id);
+    const soldOut = icon.is_limited && !icon.available;
+    const canBuy = !owned && !soldOut && currentUserPoints >= icon.price;
+    const emoji = iconEmojis[icon.name] || '🎯';
+    return `
+      <div class="icon-card">
+        <div class="icon-card-top">
+          <span class="icon-emoji">${emoji}</span>
+          <div class="icon-name">${icon.description || icon.name}</div>
+          <div class="icon-price-row">${icon.price.toLocaleString()} pt</div>
+        </div>
+        <div class="icon-card-bottom">
+          <div class="icon-badges">
+            ${icon.is_limited ? `<span class="badge badge-limited">限定 ${icon.purchased_count || 0}/${icon.total_supply}</span>` : ''}
+            ${owned ? '<span class="badge badge-owned">所持中</span>' : ''}
+            ${soldOut ? '<span class="badge badge-soldout">売り切れ</span>' : ''}
+          </div>
+          <button class="buy-btn" ${!canBuy ? 'disabled' : ''} onclick='showPurchaseModal(${JSON.stringify(icon)})'>
+            ${owned ? '所持済み' : soldOut ? '売り切れ' : '購入する'}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
 
-        async function loadUserIcons() {
-            try {
-                const response = await fetch('/api/users/me/icons', {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
+function showPurchaseModal(icon) {
+  selectedIcon = icon;
+  document.getElementById('modalMessage').innerHTML = `
+    <strong>${icon.description || icon.name}</strong> を<br>
+    <strong>${icon.price.toLocaleString()}</strong> ポイントで購入しますか？<br><br>
+    購入後の残ポイント: <strong>${(currentUserPoints - icon.price).toLocaleString()}</strong> pt
+  `;
+  document.getElementById('purchaseModal').classList.add('show');
+}
 
-                if (response.ok) {
-                    const data = await response.json();
-                    return data.icons.map(icon => icon.id);
-                }
-            } catch (error) {
-                console.error('Error loading user icons:', error);
-            }
-            return [];
-        }
+function closePurchaseModal() {
+  document.getElementById('purchaseModal').classList.remove('show');
+  selectedIcon = null;
+}
 
-        async function renderIcons(icons) {
-            const userIconIds = await loadUserIcons();
-            const iconsGrid = document.getElementById('iconsGrid');
+document.getElementById('confirmBtn').addEventListener('click', async () => {
+  if (!selectedIcon) return;
+  try {
+    const r = await fetch(`/api/icons/${selectedIcon.id}/purchase`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+    });
+    const data = await r.json();
+    if (r.ok) {
+      closePurchaseModal();
+      await loadUserPoints();
+      await loadIcons();
+    } else {
+      alert(`購入失敗: ${data.error || '不明なエラー'}`);
+    }
+  } catch (e) {
+    alert('ネットワークエラーが発生しました');
+  }
+});
 
-            if (icons && icons.length > 0) {
-                iconsGrid.innerHTML = icons.map(icon => {
-                    const owned = userIconIds.includes(icon.id);
-                    const soldOut = icon.is_limited && !icon.available;
-                    const canBuy = !owned && !soldOut && currentUserPoints >= icon.price;
+loadUserPoints();
+loadIcons();
 
-                    return `
-                        <div class="icon-card">
-                            <div class="icon-emoji">${iconEmojis[icon.name] || '🎯'}</div>
-                            <h3>${icon.description || icon.name}</h3>
-                            <p class="icon-price">${icon.price.toLocaleString()} ポイント</p>
-                            ${icon.is_limited ? `<span class="badge limited">限定 ${icon.purchased_count}/${icon.total_supply}</span>` : ''}
-                            ${owned ? '<span class="badge owned">所持中</span>' : ''}
-                            ${soldOut ? '<span class="badge sold-out">売り切れ</span>' : ''}
-                            <br><br>
-                            <button class="buy-btn"
-                                    ${!canBuy ? 'disabled' : ''}
-                                    onclick='showPurchaseModal(${JSON.stringify(icon)})'>
-                                ${owned ? '所持済み' : (soldOut ? '売り切れ' : '購入する')}
-                            </button>
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                iconsGrid.innerHTML = '<p class="loading">アイコンがありません</p>';
-            }
-        }
+// ハンバーガーメニューの開閉機能
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+const headerNav = document.querySelector('.header-nav');
 
-        function showPurchaseModal(icon) {
-            selectedIcon = icon;
-            const modal = document.getElementById('purchaseModal');
-            const message = document.getElementById('modalMessage');
+if (hamburgerBtn && headerNav) {
+  hamburgerBtn.addEventListener('click', () => {
+    hamburgerBtn.classList.toggle('active');
+    headerNav.classList.toggle('open');
+  });
 
-            message.innerHTML = `
-                <p><strong>${icon.description || icon.name}</strong>を</p>
-                <p><strong>${icon.price.toLocaleString()}</strong> ポイントで購入しますか？</p>
-                <p>購入後の残りポイント: <strong>${(currentUserPoints - icon.price).toLocaleString()}</strong></p>
-            `;
+  // メニュー外クリックで閉じる
+  document.addEventListener('click', (e) => {
+    if (!hamburgerBtn.contains(e.target) && !headerNav.contains(e.target)) {
+      hamburgerBtn.classList.remove('active');
+      headerNav.classList.remove('open');
+    }
+  });
 
-            modal.classList.add('show');
-        }
-
-        function closePurchaseModal() {
-            document.getElementById('purchaseModal').classList.remove('show');
-            selectedIcon = null;
-        }
-
-        document.getElementById('confirmBtn').addEventListener('click', async () => {
-            if (!selectedIcon) return;
-
-            try {
-                const response = await fetch(`/api/icons/${selectedIcon.id}/purchase`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    alert('購入成功！アイコンを取得しました。');
-                    closePurchaseModal();
-                    // Reload data
-                    await loadUserPoints();
-                    await loadIcons();
-                } else {
-                    alert(`購入失敗: ${data.error || '不明なエラー'}`);
-                }
-            } catch (error) {
-                alert('ネットワークエラーが発生しました');
-                console.error('Error purchasing icon:', error);
-            }
-        });
-
-        // Load initial data
-        loadUserPoints();
-        loadIcons();
-    </script>
+  // メニュー項目クリックで閉じる
+  headerNav.addEventListener('click', (e) => {
+    if (e.target.classList.contains('nav-btn') || e.target.closest('.nav-btn')) {
+      hamburgerBtn.classList.remove('active');
+      headerNav.classList.remove('open');
+    }
+  });
+}
+</script>
 </body>
 </html>

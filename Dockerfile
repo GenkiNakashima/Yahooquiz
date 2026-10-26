@@ -7,7 +7,6 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
-    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -20,7 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p /app/migrations /app/services /app/models /app/middleware
+RUN mkdir -p /app/services /app/middleware
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
@@ -30,4 +29,4 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Run the application with gunicorn
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 app:app
+CMD ["gunicorn", "--bind", ":8080", "--workers", "1", "--threads", "8", "--timeout", "0", "app:app"]

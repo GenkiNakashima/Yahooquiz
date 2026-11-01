@@ -1,25 +1,201 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-    <title>難易度選択 - JAIJAI</title>
-    <link rel="stylesheet" href="static/css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>難易度選択 — JAIJAI</title>
+<link rel="icon" type="image/png" href="/static/images/aiquiz-favicon.png">
+<link rel="stylesheet" href="/static/css/theme.css">
+<style>
+  body { display: flex; flex-direction: column; }
+
+  .section-label {
+    font-size: 9px; font-weight: 300; letter-spacing: 0.28em;
+    text-transform: uppercase; color: rgba(26,26,24,0.45);
+    text-align: center; margin-bottom: 10px;
+    animation: fadeUp 0.6s var(--ease) 0.1s both;
+  }
+  .section-title {
+    font-family: var(--font-display);
+    font-size: 40px; font-weight: 300; letter-spacing: 0.08em;
+    color: var(--charcoal); text-align: center;
+    animation: fadeUp 0.7s var(--ease) 0.15s both;
+  }
+
+  .difficulty-wrap {
+    display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;
+    animation: fadeUp 0.8s var(--ease) 0.35s both;
+  }
+
+  .diff-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    width: 200px; padding: 36px 24px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(184,150,46,0.15); border-radius: 2px;
+    cursor: pointer; transition: all 0.35s var(--ease);
+    position: relative; overflow: hidden;
+  }
+  .diff-btn::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(184,150,46,0.08) 0%, transparent 60%);
+    opacity: 0; transition: opacity 0.35s var(--ease);
+  }
+  .diff-btn:hover {
+    border-color: rgba(184,150,46,0.45);
+    transform: translateY(-4px);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.1);
+  }
+  .diff-btn:hover::before { opacity: 1; }
+  .diff-btn:active { transform: translateY(0); }
+
+  .diff-icon { font-size: 36px; line-height: 1; position: relative; z-index: 1; }
+  .diff-name {
+    font-family: var(--font-display); font-size: 22px; font-weight: 400;
+    letter-spacing: 0.08em; color: var(--charcoal); position: relative; z-index: 1;
+  }
+  .diff-desc {
+    font-size: 10px; font-weight: 200; letter-spacing: 0.14em;
+    color: rgba(26,26,24,0.45); text-align: center; position: relative; z-index: 1;
+    line-height: 1.6;
+  }
+  .diff-tag {
+    display: inline-block; padding: 3px 10px;
+    border: 1px solid rgba(184,150,46,0.3); border-radius: 1px;
+    font-size: 8px; font-weight: 300; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--gold);
+    position: relative; z-index: 1;
+  }
+
+  .diff-btn.hard .diff-tag { color: #C97070; border-color: rgba(139,32,32,0.3); }
+  .diff-btn.hard { border-color: rgba(139,32,32,0.15); }
+  .diff-btn.hard:hover { border-color: rgba(139,32,32,0.4); }
+
+  @media (max-width: 700px) {
+    .diff-btn { width: 100%; max-width: 300px; }
+    .section-title { font-size: 30px; }
+  }
+  .diff-btn:disabled { cursor: wait; opacity: 0.55; transform: none; }
+  .generating-message {
+    margin-top: 24px; text-align: center;
+    font-family: var(--font-body); font-size: 14px; letter-spacing: 0.05em;
+    color: var(--charcoal);
+  }
+</style>
 </head>
 <body>
-    <a href="/" class="home-button">メインへ</a>
 
-    <div class="floating-icons">
-        
-        <span class="icon" style="top: 25%; right: 20%;">○</span>
-        <span class="icon" style="bottom: 35%; left: 25%;">+</span>
-        <span class="icon" style="bottom: 25%; right: 30%;">↗</span>
-    </div>
+<div class="bg-letters" aria-hidden="true">
+  <span class="bg-letter" style="font-size:280px;top:-40px;left:-30px;transform:rotate(-8deg)">A</span>
+  <span class="bg-letter" style="font-size:320px;top:200px;left:-60px;transform:rotate(3deg)">I</span>
+  <span class="bg-letter" style="font-size:260px;top:600px;left:-40px;transform:rotate(4deg)">N</span>
+  <span class="bg-letter" style="font-size:300px;top:-20px;right:-50px;transform:rotate(6deg)">M</span>
+  <span class="bg-letter" style="font-size:200px;top:300px;right:-20px;transform:rotate(-4deg)">K</span>
+  <span class="bg-letter" style="font-size:260px;top:600px;right:-40px;transform:rotate(5deg)">Z</span>
+</div>
 
-    <div class="container">
-        <form action="/game" method="post">
-            <button type="submit" name="ai_level" value="weak" class="mode-button">イージーモード</button>
-            <button type="submit" name="ai_level" value="normal" class="mode-button">ノーマルモード</button>
-            <button type="submit" name="ai_level" value="strong" class="mode-button">ハードモード</button>
-        </form>
+<header class="topbar">
+  <div class="topbar-left">
+    <a href="/" class="topbar-brand">JAIJAI</a>
+  </div>
+  <nav class="topbar-nav" id="topbarNav">
+    <a href="/" class="nav-btn active">ゲーム</a>
+    <a href="/dashboard" class="nav-btn">ダッシュボード</a>
+    <a href="/leaderboard" class="nav-btn">ランキング</a>
+  </nav>
+  <button class="hamburger-btn" id="hamburgerBtn" aria-label="メニューを開く">
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+  </button>
+</header>
+
+<main class="stage" style="gap:24px">
+  <div>
+    <div class="section-label">Step 02</div>
+    <div class="section-title">難易度を選ぶ</div>
+  </div>
+
+  <div class="connector"></div>
+
+  <form action="/game" method="post" id="levelForm">
+    <div class="difficulty-wrap">
+      <button type="submit" name="ai_level" value="weak" class="diff-btn easy">
+        <span class="diff-icon">🌱</span>
+        <span class="diff-name">イージー</span>
+        <span class="diff-desc">AIの反応が遅め<br>じっくり考えられます</span>
+        <span class="diff-tag">Easy</span>
+      </button>
+      <button type="submit" name="ai_level" value="normal" class="diff-btn normal">
+        <span class="diff-icon">⚡</span>
+        <span class="diff-name">ノーマル</span>
+        <span class="diff-desc">AIと互角の勝負<br>バランスの取れた対決</span>
+        <span class="diff-tag">Normal</span>
+      </button>
+      <button type="submit" name="ai_level" value="strong" class="diff-btn hard">
+        <span class="diff-icon">🔥</span>
+        <span class="diff-name">ハード</span>
+        <span class="diff-desc">AIの反応が超高速<br>上級者向け</span>
+        <span class="diff-tag">Hard</span>
+      </button>
     </div>
+    <p id="generatingMessage" class="generating-message" hidden>
+      ニュース記事から問題を作成中です…（数十秒かかることがあります）
+    </p>
+  </form>
+</main>
+
+<script>
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+const topbarNav = document.getElementById('topbarNav');
+if (hamburgerBtn && topbarNav) {
+  hamburgerBtn.addEventListener('click', () => {
+    hamburgerBtn.classList.toggle('active');
+    topbarNav.classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!hamburgerBtn.contains(e.target) && !topbarNav.contains(e.target)) {
+      hamburgerBtn.classList.remove('active');
+      topbarNav.classList.remove('open');
+    }
+  });
+  topbarNav.addEventListener('click', (e) => {
+    if (e.target.classList.contains('nav-btn') || e.target.closest('.nav-btn')) {
+      hamburgerBtn.classList.remove('active');
+      topbarNav.classList.remove('open');
+    }
+  });
+}
+
+// 問題の生成中に二重送信されないようにする（LLM のレート制限を無駄に消費しないため）
+const levelForm = document.getElementById('levelForm');
+const generatingMessage = document.getElementById('generatingMessage');
+levelForm.addEventListener('submit', (e) => {
+  if (levelForm.dataset.submitting) {
+    e.preventDefault();
+    return;
+  }
+  levelForm.dataset.submitting = '1';
+  // 無効化したボタンの値は送信されないため、押されたボタンの値を hidden で送る
+  if (e.submitter && e.submitter.name) {
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = e.submitter.name;
+    hidden.value = e.submitter.value;
+    levelForm.appendChild(hidden);
+  }
+  levelForm.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+  generatingMessage.hidden = false;
+});
+// ブラウザの「戻る」で復元された場合は操作できる状態に戻す
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) {
+    delete levelForm.dataset.submitting;
+    levelForm.querySelectorAll('input[type=hidden]').forEach((h) => h.remove());
+    levelForm.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+    generatingMessage.hidden = true;
+  }
+});
+</script>
 </body>
 </html>

@@ -1,132 +1,302 @@
-<!-- templates/index.html -->
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-   <title>JAIJAI - AI早押しクイズ対決</title>
-   <link rel="stylesheet" href="static/css/style.css">
-   <style>
-       .auth-menu {
-           position: fixed;
-           top: 20px;
-           right: 20px;
-           display: flex;
-           gap: 10px;
-           z-index: 100;
-       }
-       .auth-menu button, .auth-menu a {
-           padding: 10px 20px;
-           background: #4CAF50;
-           color: white;
-           text-decoration: none;
-           border: none;
-           border-radius: 5px;
-           cursor: pointer;
-       }
-       .auth-menu button:hover, .auth-menu a:hover {
-           background: #45a049;
-       }
-       .user-info {
-           background: white;
-           padding: 8px 15px;
-           border-radius: 5px;
-           color: #333;
-           display: flex;
-           align-items: center;
-           gap: 10px;
-       }
-       .user-points {
-           color: #4CAF50;
-           font-weight: bold;
-       }
-   </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JAIJAI — AI早押しクイズ対決</title>
+<link rel="icon" type="image/png" href="/static/images/aiquiz-favicon.png">
+<link rel="stylesheet" href="/static/css/theme.css">
+<style>
+  body { display: flex; flex-direction: column; }
+
+  .hero-card {
+    background: var(--glass-dark);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-light); border-radius: 2px;
+    width: 100%; max-width: 680px;
+    padding: 52px 64px 44px;
+    text-align: center; position: relative; overflow: hidden;
+    animation: fadeUp 0.8s var(--ease) 0.1s both;
+  }
+  .hero-card::after {
+    content: ''; position: absolute;
+    bottom: 0; left: 64px; right: 64px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    opacity: 0.5;
+  }
+  .hero-title {
+    font-family: var(--font-display);
+    font-size: 72px; font-weight: 300; letter-spacing: 0.16em;
+    color: var(--off-white); line-height: 1; margin-bottom: 18px;
+  }
+  .hero-subtitle {
+    font-size: 11px; font-weight: 200; letter-spacing: 0.24em;
+    color: rgba(245,242,236,0.45); text-transform: uppercase;
+  }
+
+  .rules-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(184,150,46,0.14); border-radius: 2px;
+    width: 100%; max-width: 680px; overflow: hidden;
+    animation: fadeUp 0.8s var(--ease) 0.25s both;
+  }
+  .rules-header {
+    padding: 22px 40px 18px;
+    border-bottom: 1px solid rgba(184,150,46,0.1);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .rules-header-line { width: 20px; height: 1px; background: var(--gold); opacity: 0.7; flex-shrink: 0; }
+  .rules-header-title {
+    font-family: var(--font-display);
+    font-size: 17px; font-weight: 400; letter-spacing: 0.1em; color: var(--charcoal);
+  }
+  .rules-body { padding: 28px 40px 32px; display: flex; flex-direction: column; }
+  .rule-item {
+    display: flex; align-items: baseline; gap: 18px;
+    padding: 13px 0; border-bottom: 1px solid rgba(26,26,24,0.06);
+    opacity: 0; transform: translateX(-10px);
+    transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+  }
+  .rule-item:last-child { border-bottom: none; }
+  .rule-item.visible { opacity: 1; transform: translateX(0); }
+  .rule-num {
+    font-family: var(--font-display); font-size: 13px; font-weight: 300;
+    letter-spacing: 0.1em; color: var(--gold); min-width: 20px; flex-shrink: 0;
+  }
+  .rule-text {
+    font-size: 13px; font-weight: 300; letter-spacing: 0.08em;
+    color: rgba(26,26,24,0.75); line-height: 1.6;
+  }
+
+  .cta-wrap {
+    margin-top: 36px;
+    animation: fadeUp 0.8s var(--ease) 0.45s both;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }
+  .cta-hint {
+    font-size: 10px; font-weight: 200; letter-spacing: 0.2em;
+    text-transform: uppercase; color: rgba(26,26,24,0.35);
+  }
+
+  /* topbar guest state */
+  .topbar-guest { display: flex; gap: 4px; }
+
+  @media (max-width: 700px) {
+    .hero-title { font-size: 52px; }
+    .hero-card { padding: 36px 32px 32px; }
+    .rules-body { padding: 20px 24px 24px; }
+    .rules-header { padding: 18px 24px 14px; }
+  }
+
+  /* ハンバーガーメニューボタン */
+  .hamburger-btn {
+    display: none; /* PCでは非表示 */
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    flex-direction: column;
+    gap: 4px;
+    position: relative;
+    z-index: 11;
+  }
+  .hamburger-line {
+    width: 20px;
+    height: 2px;
+    background: var(--charcoal);
+    transition: all 0.3s var(--ease);
+    transform-origin: center;
+  }
+
+  /* スマホ時のハンバーガーメニュー開閉アニメーション */
+  .hamburger-btn.active .hamburger-line:nth-child(1) {
+    transform: rotate(45deg) translate(5px, 5px);
+  }
+  .hamburger-btn.active .hamburger-line:nth-child(2) {
+    opacity: 0;
+  }
+  .hamburger-btn.active .hamburger-line:nth-child(3) {
+    transform: rotate(-45deg) translate(7px, -6px);
+  }
+
+  /* スマホ時のナビゲーション表示制御 */
+  @media (max-width: 700px) {
+    .hamburger-btn {
+      display: flex; /* スマホで表示 */
+    }
+    .topbar-nav {
+      position: fixed;
+      top: 0;
+      right: -100%; /* 初期状態で画面外 */
+      width: 280px;
+      height: 100vh;
+      background: rgba(252, 250, 245, 0.97);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-left: 1px solid rgba(184,150,46,0.18);
+      box-shadow: -4px 0 32px rgba(0,0,0,0.08);
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 80px 24px 24px;
+      gap: 16px;
+      transition: right 0.3s var(--ease);
+      z-index: 10;
+    }
+    .topbar-nav.open {
+      right: 0; /* 開いた状態 */
+    }
+    .topbar-nav .nav-btn {
+      width: 100%;
+      text-align: left;
+      padding: 12px 16px;
+      border-radius: 4px;
+      color: rgba(26,26,24,0.65);
+    }
+    .topbar-nav .nav-btn:hover {
+      background: rgba(26,26,24,0.04);
+      color: var(--charcoal);
+    }
+  }
+</style>
 </head>
 <body>
-   <!-- Auth Menu -->
-   <div class="auth-menu" id="authMenu"></div>
 
-   <div class="floating-icons">
+<div class="bg-letters" aria-hidden="true">
+  <span class="bg-letter" style="font-size:280px;top:-40px;left:-30px;transform:rotate(-8deg)">A</span>
+  <span class="bg-letter" style="font-size:180px;top:60px;left:20px;transform:rotate(-5deg)">B</span>
+  <span class="bg-letter" style="font-size:320px;top:200px;left:-60px;transform:rotate(3deg)">C</span>
+  <span class="bg-letter" style="font-size:220px;top:500px;left:-20px;transform:rotate(-6deg)">D</span>
+  <span class="bg-letter" style="font-size:260px;top:700px;left:-40px;transform:rotate(4deg)">N</span>
+  <span class="bg-letter" style="font-size:300px;top:-20px;right:-50px;transform:rotate(6deg)">M</span>
+  <span class="bg-letter" style="font-size:200px;top:300px;right:-20px;transform:rotate(-4deg)">K</span>
+  <span class="bg-letter" style="font-size:260px;top:600px;right:-40px;transform:rotate(5deg)">Z</span>
+</div>
 
-       <span class="icon" style="top: 20%; right: 15%;">○</span>
-       <span class="icon" style="bottom: 30%; left: 20%;">+</span>
-       <span class="icon" style="bottom: 20%; right: 25%;">↗</span>
-   </div>
+<header class="topbar">
+  <div class="topbar-left" id="topbarLeft">
+    <span class="topbar-brand">JAIJAI</span>
+  </div>
+  <nav class="topbar-nav" id="topbarNav">
+    <a href="/login" class="nav-btn">ログイン</a>
+    <a href="/register" class="nav-btn">新規登録</a>
+  </nav>
+  <!-- ハンバーガーメニューボタン（スマホ時のみ表示） -->
+  <button class="hamburger-btn" id="hamburgerBtn" aria-label="メニューを開く">
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+  </button>
+</header>
 
-   <div class="container">
-       <div class="title-box">
-           <h1 class="title">JAIJAI</h1>
-           <p class="subtitle">〜若者にニュースに興味を持ってもらおう〜</p>
-       </div>
+<main class="stage">
+  <div class="hero-card">
+    <div class="corner corner-tl"></div>
+    <div class="corner corner-tr"></div>
+    <div class="corner corner-bl"></div>
+    <div class="corner corner-br"></div>
+    <div class="hero-title">JAIJAI</div>
+    <div class="hero-subtitle">〜 若者にニュースに興味を持ってもらおう 〜</div>
+  </div>
 
-       <div class="rules">
-           <h2>ルール説明</h2>
-           <ul>
-               <li>最新ニュースについての問題が出題されます</li>
-               <li>早押しボタンを押して回答権を獲得しましょう</li>
-               <li>AIより先に押せなかった場合は、AIが回答します</li>
-               <li>全5問で対決します</li>
-           </ul>
-       </div>
+  <div class="connector"></div>
 
-       <a href="/game" class="start-button">ゲームスタート</a>
-   </div>
+  <div class="rules-card">
+    <div class="rules-header">
+      <div class="rules-header-line"></div>
+      <div class="rules-header-title">ルール説明</div>
+    </div>
+    <div class="rules-body">
+      <div class="rule-item">
+        <span class="rule-num">01</span>
+        <span class="rule-text">最新ニュースについての問題が出題されます</span>
+      </div>
+      <div class="rule-item">
+        <span class="rule-num">02</span>
+        <span class="rule-text">早押しボタンを押して回答権を獲得しましょう</span>
+      </div>
+      <div class="rule-item">
+        <span class="rule-num">03</span>
+        <span class="rule-text">AIより先に押せなかった場合は、AIが回答します</span>
+      </div>
+      <div class="rule-item">
+        <span class="rule-num">04</span>
+        <span class="rule-text">全5問で対決します</span>
+      </div>
+    </div>
+  </div>
 
-   <script src="/static/javascript/api.js"></script>
-   <script>
-       // Display auth menu based on login status
-       const authMenu = document.getElementById('authMenu');
-       const accessToken = localStorage.getItem('access_token');
+  <div class="cta-wrap">
+    <a href="/genre" class="cta-btn">
+      <span>ゲームスタート</span>
+      <span class="cta-arrow">→</span>
+    </a>
+    <span class="cta-hint">Press to begin</span>
+  </div>
+</main>
 
-       if (accessToken) {
-           // User is logged in
-           // Try to fetch user data
-           fetch('/api/users/me', {
-               headers: {
-                   'Authorization': `Bearer ${accessToken}`
-               }
-           })
-           .then(response => {
-               if (response.ok) {
-                   return response.json();
-               } else {
-                   // Token invalid, clear storage
-                   localStorage.removeItem('access_token');
-                   localStorage.removeItem('user');
-                   throw new Error('Invalid token');
-               }
-           })
-           .then(user => {
-               authMenu.innerHTML = `
-                   <div class="user-info">
-                       <span>${user.display_name || 'ゲスト'}</span>
-                       <span class="user-points">${user.points} pt</span>
-                   </div>
-                   <a href="/dashboard">ダッシュボード</a>
-                   <a href="/shop">ショップ</a>
-                   <a href="/leaderboard">ランキング</a>
-                   <button onclick="logout()">ログアウト</button>
-               `;
-           })
-           .catch(() => {
-               // Show login/register buttons
-               showGuestMenu();
-           });
-       } else {
-           // User is not logged in
-           showGuestMenu();
-       }
+<script src="/static/javascript/api.js"></script>
+<script>
+document.querySelectorAll('.rule-item').forEach((item, i) => {
+  setTimeout(() => item.classList.add('visible'), 500 + i * 100);
+});
 
-       function showGuestMenu() {
-           authMenu.innerHTML = `
-               <a href="/login">ログイン</a>
-               <a href="/register">新規登録</a>
-           `;
-       }
+const accessToken = localStorage.getItem('access_token');
+if (accessToken) {
+  fetch('/api/users/me', { headers: { 'Authorization': `Bearer ${accessToken}` } })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(user => {
+      document.getElementById('topbarLeft').innerHTML = `
+        <span class="topbar-brand">${user.display_name || 'ゲスト'}</span>
+        <div class="topbar-divider"></div>
+        <div class="topbar-points"><span class="pt-val">${user.points}</span><span>pt</span></div>
+      `;
+      document.getElementById('topbarNav').innerHTML = `
+        <a href="/" class="nav-btn active">ゲーム</a>
+        <a href="/dashboard" class="nav-btn">ダッシュボード</a>
+        <a href="/shop" class="nav-btn">ショップ</a>
+        <a href="/leaderboard" class="nav-btn">ランキング</a>
+        <button class="nav-btn logout" onclick="logout()">ログアウト</button>
+      `;
+    })
+    .catch(() => {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
+    });
+}
 
-       function logout() {
-           localStorage.removeItem('access_token');
-           localStorage.removeItem('user');
-           location.reload();
-       }
-   </script>
+function logout() {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('user');
+  location.reload();
+}
+
+// ハンバーガーメニューの開閉機能
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+const topbarNav = document.getElementById('topbarNav');
+
+if (hamburgerBtn && topbarNav) {
+  hamburgerBtn.addEventListener('click', () => {
+    hamburgerBtn.classList.toggle('active');
+    topbarNav.classList.toggle('open');
+  });
+
+  // メニュー外クリックで閉じる
+  document.addEventListener('click', (e) => {
+    if (!hamburgerBtn.contains(e.target) && !topbarNav.contains(e.target)) {
+      hamburgerBtn.classList.remove('active');
+      topbarNav.classList.remove('open');
+    }
+  });
+
+  // メニュー項目クリックで閉じる
+  topbarNav.addEventListener('click', (e) => {
+    if (e.target.classList.contains('nav-btn') || e.target.closest('.nav-btn')) {
+      hamburgerBtn.classList.remove('active');
+      topbarNav.classList.remove('open');
+    }
+  });
+}
+</script>
 </body>
 </html>

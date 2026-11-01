@@ -43,10 +43,6 @@ htmlcov
 *.md
 !README.md
 
-# Heroku files (no longer needed)
-Procfile
-runtime.txt
-
 # macOS
 .DS_Store
 

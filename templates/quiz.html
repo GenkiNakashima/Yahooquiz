@@ -1,148 +1,488 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-    <title>クイズ - AI早押しクイズ対決</title>
-    <link rel="stylesheet" href="static/css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>クイズ — JAIJAI</title>
+<link rel="icon" type="image/png" href="/static/images/aiquiz-favicon.png">
+<link rel="stylesheet" href="/static/css/theme.css">
+<style>
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* ── Progress bar ── */
+  .progress-bar {
+    position: relative; z-index: 10;
+    padding: 18px 40px 0;
+    display: flex; align-items: center; gap: 16px;
+    animation: fadeDown 0.6s var(--ease) both;
+  }
+  .progress-label {
+    font-size: 10px; font-weight: 300; letter-spacing: 0.22em;
+    text-transform: uppercase; color: rgba(26,26,24,0.5); white-space: nowrap;
+  }
+  .progress-track {
+    flex: 1; height: 2px; background: rgba(26,26,24,0.12); border-radius: 1px;
+  }
+  .progress-fill {
+    height: 100%; background: var(--gold); border-radius: 1px;
+    transition: width 0.6s var(--ease);
+  }
+  .progress-count {
+    font-family: var(--font-display); font-size: 16px; font-weight: 300;
+    letter-spacing: 0.06em; color: var(--charcoal); white-space: nowrap;
+  }
+
+  /* ── Main stage ── */
+  .quiz-stage {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start;
+    padding: 24px 32px 60px; gap: 0;
+    position: relative; z-index: 1;
+  }
+
+  /* ── Article card ── */
+  .article-card {
+    width: 100%; max-width: 760px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(184,150,46,0.14); border-radius: 2px;
+    overflow: hidden; position: relative;
+    animation: fadeUp 0.8s var(--ease) 0.1s both;
+  }
+  .article-timer-bar {
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: var(--gold); transform-origin: left;
+    animation: countdown 5s linear forwards;
+  }
+  @keyframes countdown {
+    from { transform: scaleX(1); }
+    to   { transform: scaleX(0); }
+  }
+  .article-inner { padding: 36px 40px 32px; }
+  .article-meta {
+    font-size: 9px; font-weight: 300; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--gold); margin-bottom: 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .article-meta::before { content: ''; width: 16px; height: 1px; background: var(--gold); display: inline-block; }
+  .article-title {
+    font-family: var(--font-display); font-size: 22px; font-weight: 400;
+    letter-spacing: 0.05em; color: var(--charcoal); line-height: 1.5;
+    margin-bottom: 20px;
+  }
+  .article-content {
+    font-size: 13px; font-weight: 300; letter-spacing: 0.05em;
+    color: rgba(26,26,24,0.75); line-height: 1.9;
+    white-space: pre-line; margin-bottom: 20px;
+  }
+  .article-source {
+    text-align: right; font-size: 10px; font-weight: 200;
+    letter-spacing: 0.14em; color: rgba(26,26,24,0.35);
+  }
+  .article-source a { color: inherit; text-decoration: none; }
+  .article-source a:hover { color: var(--gold); }
+
+  @keyframes fadeOutUp {
+    from { opacity: 1; transform: translateY(0); }
+    to   { opacity: 0; transform: translateY(-20px); }
+  }
+  .fade-out { animation: fadeOutUp 0.5s var(--ease) forwards; }
+
+  /* ── Quiz card ── */
+  .quiz-card {
+    width: 100%; max-width: 760px;
+    background: var(--glass-dark);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-light); border-radius: 2px;
+    padding: 40px; display: none;
+    opacity: 0; transform: translateY(18px);
+    transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+  }
+  .quiz-card.visible { opacity: 1; transform: translateY(0); }
+
+  .question-text {
+    font-family: var(--font-display); font-size: 26px; font-weight: 400;
+    letter-spacing: 0.06em; color: var(--off-white); line-height: 1.6;
+    margin-bottom: 28px;
+  }
+
+  /* AI status */
+  .ai-status {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 32px; padding: 16px 20px;
+    background: rgba(245,242,236,0.05); border: 1px solid rgba(245,242,236,0.08);
+    border-radius: 2px;
+  }
+  .ai-thinking-row { display: flex; align-items: center; gap: 12px; }
+  .ai-icon-badge {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(245,242,236,0.08); border: 1px solid rgba(245,242,236,0.15);
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+  }
+  .thinking-dots { display: flex; gap: 3px; }
+  .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--gold-light); opacity: 0;
+    animation: dotAnimation 1.4s infinite;
+  }
+  .dot:nth-child(2) { animation-delay: 0.2s; }
+  .dot:nth-child(3) { animation-delay: 0.4s; }
+  .ai-thinking-msg {
+    font-size: 11px; font-weight: 200; letter-spacing: 0.14em;
+    color: rgba(245,242,236,0.45);
+  }
+  .timer-display {
+    font-family: var(--font-display); font-size: 28px; font-weight: 300;
+    letter-spacing: 0.06em; color: rgba(245,242,236,0.7);
+  }
+
+  /* Buzzer button */
+  .buzzer-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    margin: 8px 0;
+  }
+  .buzzer-button {
+    width: 200px; height: 200px; border-radius: 50%;
+    background: var(--charcoal);
+    border: 2px solid rgba(184,150,46,0.35);
+    color: var(--off-white); font-family: var(--font-display);
+    font-size: 28px; font-weight: 300; letter-spacing: 0.1em;
+    cursor: pointer; transition: all 0.3s var(--ease);
+    box-shadow: 0 0 0 8px rgba(184,150,46,0.06), 0 8px 30px rgba(0,0,0,0.25);
+    position: relative;
+  }
+  .buzzer-button::before {
+    content: ''; position: absolute; inset: -8px;
+    border-radius: 50%; border: 1px solid rgba(184,150,46,0.2);
+    animation: pulseRing 2s ease-out infinite;
+  }
+  @keyframes pulseRing {
+    0%   { transform: scale(1); opacity: 0.6; }
+    70%  { transform: scale(1.12); opacity: 0; }
+    100% { transform: scale(1.12); opacity: 0; }
+  }
+  .buzzer-button:hover {
+    border-color: var(--gold); background: rgba(26,26,24,0.95);
+    box-shadow: 0 0 0 8px rgba(184,150,46,0.1), 0 16px 40px rgba(0,0,0,0.3);
+    transform: scale(1.04);
+  }
+  .buzzer-button:active { transform: scale(0.96); }
+  .buzzer-hint {
+    font-size: 10px; font-weight: 200; letter-spacing: 0.2em;
+    text-transform: uppercase; color: rgba(245,242,236,0.3);
+  }
+
+  /* Answer input */
+  .answer-section {
+    display: none; flex-direction: column; align-items: center; gap: 16px;
+    margin-top: 8px;
+  }
+  .answer-input-field {
+    width: 100%; padding: 18px 20px;
+    background: rgba(245,242,236,0.08); border: 1px solid rgba(184,150,46,0.3);
+    border-radius: 2px; font-family: var(--font-display);
+    font-size: 22px; font-weight: 300; letter-spacing: 0.08em;
+    color: var(--off-white); outline: none; text-align: center;
+    transition: border-color 0.3s var(--ease);
+  }
+  .answer-input-field::placeholder { color: rgba(245,242,236,0.2); }
+  .answer-input-field:focus { border-color: var(--gold); }
+  .answer-submit-btn {
+    padding: 0 48px; height: 52px; width: 100%;
+    background: var(--off-white); border: none; border-radius: 2px;
+    font-family: var(--font-display); font-size: 18px; font-weight: 400;
+    letter-spacing: 0.1em; color: var(--charcoal);
+    cursor: pointer; transition: all 0.3s var(--ease);
+  }
+  .answer-submit-btn:hover { background: #fff; transform: translateY(-1px); }
+
+  /* 4択の選択肢 */
+  .choice-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%;
+  }
+  .choice-btn {
+    display: flex; align-items: center; gap: 12px;
+    min-height: 64px; padding: 14px 18px; width: 100%;
+    background: rgba(245,242,236,0.08); border: 1px solid rgba(184,150,46,0.3);
+    border-radius: 2px; cursor: pointer; text-align: left;
+    font-family: var(--font-display); font-size: 19px; font-weight: 400;
+    letter-spacing: 0.04em; color: var(--off-white);
+    transition: all 0.25s var(--ease);
+  }
+  .choice-btn:hover, .choice-btn:focus-visible {
+    border-color: var(--gold); background: rgba(184,150,46,0.15); outline: none;
+  }
+  .choice-btn:disabled { cursor: wait; opacity: 0.6; }
+  .choice-label {
+    flex: none; width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--gold); color: var(--gold);
+    font-family: var(--font-body); font-size: 13px; font-weight: 300;
+  }
+  .choice-text { overflow-wrap: anywhere; }
+
+  /* ── Result area ── */
+  .result-card {
+    width: 100%; max-width: 760px;
+    animation: fadeUp 0.8s var(--ease) both;
+  }
+  .result-hero {
+    background: var(--glass-dark);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-light); border-radius: 2px;
+    padding: 40px; margin-bottom: 16px;
+  }
+  .result-status {
+    font-family: var(--font-display); font-size: 48px; font-weight: 300;
+    letter-spacing: 0.1em; margin-bottom: 16px;
+  }
+  .result-status.correct { color: #6ABF8A; }
+  .result-status.wrong   { color: #C97070; }
+  .result-status.ai-correct { color: var(--gold-light); }
+  .result-status.ai-wrong   { color: rgba(245,242,236,0.5); }
+  .result-answer {
+    font-size: 13px; font-weight: 300; letter-spacing: 0.1em;
+    color: rgba(245,242,236,0.55); margin-bottom: 8px;
+  }
+  .result-answer strong { color: rgba(245,242,236,0.8); font-weight: 400; }
+
+  .explanation-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(184,150,46,0.12); border-radius: 2px;
+    padding: 28px 32px; margin-bottom: 24px;
+  }
+  .explanation-label {
+    font-size: 9px; font-weight: 300; letter-spacing: 0.24em;
+    text-transform: uppercase; color: var(--gold); margin-bottom: 10px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .explanation-label::before { content: ''; width: 14px; height: 1px; background: var(--gold); }
+  .explanation-text {
+    font-size: 14px; font-weight: 300; letter-spacing: 0.06em;
+    color: rgba(26,26,24,0.8); line-height: 1.8;
+  }
+
+  .ai-result-panel {
+    background: rgba(245,242,236,0.06); border: 1px solid rgba(245,242,236,0.1);
+    border-radius: 2px; padding: 20px 24px; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .ai-result-text {
+    font-size: 13px; font-weight: 300; letter-spacing: 0.08em;
+    color: rgba(245,242,236,0.6);
+  }
+
+  .next-btn {
+    display: inline-flex; align-items: center; gap: 16px;
+    background: var(--charcoal); border: 1px solid var(--charcoal);
+    border-radius: 2px; padding: 0 40px; height: 56px;
+    font-family: var(--font-display); font-size: 18px; font-weight: 400;
+    letter-spacing: 0.12em; color: var(--off-white);
+    text-decoration: none; transition: all 0.35s var(--ease); cursor: pointer;
+    position: relative; overflow: hidden;
+  }
+  .next-btn::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, var(--gold) 0%, transparent 60%);
+    opacity: 0; transition: opacity 0.35s;
+  }
+  .next-btn:hover { border-color: var(--gold); transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
+  .next-btn:hover::before { opacity: 0.1; }
+  .next-btn span { position: relative; z-index: 1; }
+  .next-arrow { position: relative; z-index: 1; font-size: 14px; font-weight: 200; color: var(--gold-light); transition: transform 0.3s; }
+  .next-btn:hover .next-arrow { transform: translateX(4px); }
+
+  @media (max-width: 700px) {
+    .quiz-stage { padding: 16px 16px 40px; }
+    .article-inner { padding: 24px; }
+    .quiz-card { padding: 28px 24px; }
+    .question-text { font-size: 20px; }
+    .buzzer-button { width: 160px; height: 160px; font-size: 22px; }
+    .choice-grid { grid-template-columns: 1fr; }
+  }
+</style>
 </head>
 <body>
-    <div class="container">
-        <div class="progress">
-            第{{ round }}問 / 全{{ total }}問
+
+<div class="bg-letters" aria-hidden="true">
+  <span class="bg-letter" style="font-size:280px;top:-40px;left:-50px;transform:rotate(-8deg)">Q</span>
+  <span class="bg-letter" style="font-size:200px;top:300px;left:-30px;transform:rotate(4deg)">A</span>
+  <span class="bg-letter" style="font-size:240px;top:-20px;right:-40px;transform:rotate(7deg)">?</span>
+  <span class="bg-letter" style="font-size:180px;top:400px;right:-20px;transform:rotate(-5deg)">!</span>
+</div>
+
+<!-- Progress -->
+<div class="progress-bar">
+  <span class="progress-label">Question</span>
+  <div class="progress-track">
+    <div class="progress-fill" style="width: {{ (round / total * 100) | int }}%"></div>
+  </div>
+  <span class="progress-count">{{ round }} / {{ total }}</span>
+</div>
+
+<div class="quiz-stage">
+
+{% if result %}
+  <!-- ── Result display ── -->
+  <div class="result-card">
+
+    {% if result == 'ai_correct' or result == 'ai_wrong' %}
+      <div class="result-hero">
+        <div class="ai-result-panel">
+          <div class="ai-icon-badge">🤖</div>
+          <div class="thinking-dots">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
+          <span class="ai-result-text">{{ ai_thinking }}</span>
         </div>
-        
-        {% if result %}
-            <div class="result-area">
-                {% if result == 'ai_correct' or result == 'ai_wrong' %}
-                    <div class="ai-answer-animation">
-                        <div class="thinking-animation">
-                            <div class="ai-icon">🤖</div>
-                            <div class="thinking-dots">
-                                <span class="dot">.</span>
-                                <span class="dot">.</span>
-                                <span class="dot">.</span>
-                            </div>
-                            <div class="ai-thinking-message">{{ ai_thinking }}</div>
-                        </div>
-                        {% if result == 'ai_correct' %}
-                            <div class="ai-result correct">
-                                <p>AIの回答: {{ answer }}</p>
-                                <p class="result-message">正解！</p>
-                            </div>
-                        {% else %}
-                            <div class="ai-result wrong">
-                                <p>AIの回答: ???</p>
-                                <p class="result-message">不正解...</p>
-                            </div>
-                        {% endif %}
-                        <p class="explanation">{{ explanation }}</p>
-                    </div>
-                {% elif result == 'correct' %}
-                    <div class="player-result correct">
-                        <h2>正解！</h2>
-                        <p class="explanation">{{ explanation }}</p>
-                    </div>
-                {% else %}
-                    <div class="player-result wrong">
-                        <h2>不正解...</h2>
-                        <p>正解は: {{ answer }}</p>
-                        <p class="explanation">{{ explanation }}</p>
-                    </div>
-                {% endif %}
-                <a href="/quiz" class="next-button">次の問題へ</a>
-            </div>
+        {% if result == 'ai_correct' %}
+          <div class="result-status ai-correct">AIが正解！</div>
+          <div class="result-answer">正解: <strong>{{ answer }}</strong></div>
         {% else %}
-        <div class="quiz-area">
-            <!-- 記事表示部分 -->
-            <div id="article-section" class="article-section">
-                <div class="timer-bar" id="timer-bar"></div>
-                <h3 class="article-title">{{ article_title }}</h3>
-                <div class="article-content">
-                    {{ article_content }}
-                </div>
-                <div class="article-source">
-                    <a href="{{ article_url }}" target="_blank" rel="noopener noreferrer">出典: Yahoo!ニュース</a>
-                </div>
-            </div>
-    
-            <!-- クイズ部分（最初は非表示） -->
-            <div id="quiz-section" class="quiz-section" style="display: none;">
-                <h2>{{ question }}</h2>
-                
-                <!-- AI思考エフェクト -->
-                <div class="ai-status">
-                    <div class="ai-thinking">
-                        <div class="ai-icon">🤖</div>
-                        <div class="thinking-dots">
-                            <span class="dot">.</span>
-                            <span class="dot">.</span>
-                            <span class="dot">.</span>
-                        </div>
-                        <div class="ai-thinking-message">{{ ai_thinking }}</div>
-                    </div>
-                    <div class="timer" id="timer">0.0秒</div>
-                </div>
-    
-                <form id="quiz-form" action="/quiz" method="post">
-                    <input type="hidden" name="time" id="reaction-time">
-                    <button type="button" id="buzzer" class="buzzer-button">早押しボタン</button>
-                    <div id="answer-input" class="answer-input" style="display: none;">
-                        <input type="text" name="answer" required placeholder="回答を入力">
-                        <button type="submit">回答する</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <script>
-            document.addEventListener('DOMContentLoaded', function() {
-            const articleSection = document.getElementById('article-section');
-            const quizSection = document.getElementById('quiz-section');
-            const startTime = Date.now();
-
-            // 5秒後に記事を非表示にしてクイズを表示
-            setTimeout(() => {
-                articleSection.classList.add('fade-out');
-                setTimeout(() => {
-                    articleSection.style.display = 'none';
-                    quizSection.style.display = 'block';
-                    setTimeout(() => {
-                        quizSection.classList.add('visible');
-                    }, 50);
-                }, 500);
-            }, 5000);
-
-            // 早押しボタンの処理
-            const buzzer = document.getElementById('buzzer');
-            const answerInput = document.getElementById('answer-input');
-            const reactionTime = document.getElementById('reaction-time');
-            const timer = document.getElementById('timer');
-            
-            function updateTimer() {
-                const currentTime = Date.now();
-                const elapsedTime = (currentTime - startTime) / 1000;
-                timer.textContent = elapsedTime.toFixed(1) + '秒';
-                requestAnimationFrame(updateTimer);
-            }
-            
-            // タイマーの更新は記事が消えた後に開始
-            setTimeout(() => {
-                updateTimer();
-            }, 5000);
-            
-            buzzer.addEventListener('click', function() {
-                const endTime = Date.now();
-                const timeTaken = (endTime - startTime) / 1000;
-                reactionTime.value = timeTaken;
-                
-                buzzer.style.display = 'none';
-                answerInput.style.display = 'block';
-                document.querySelector('input[name="answer"]').focus();
-            });
-        });
-        </script>
+          <div class="result-status ai-wrong">AIも不正解...</div>
+          <div class="result-answer">正解: <strong>{{ answer }}</strong></div>
         {% endif %}
+      </div>
+    {% elif result == 'correct' %}
+      <div class="result-hero">
+        <div class="result-status correct">正解！</div>
+        <div class="result-answer">素晴らしい回答でした</div>
+      </div>
+    {% else %}
+      <div class="result-hero">
+        <div class="result-status wrong">不正解...</div>
+        <div class="result-answer">正解: <strong>{{ answer }}</strong></div>
+      </div>
+    {% endif %}
+
+    {% if explanation %}
+    <div class="explanation-card">
+      <div class="explanation-label">解説</div>
+      <div class="explanation-text">{{ explanation }}</div>
+    </div>
+    {% endif %}
+
+    <a href="/quiz" class="next-btn">
+      <span>次の問題へ</span>
+      <span class="next-arrow">→</span>
+    </a>
+  </div>
+
+{% else %}
+  <!-- ── Article section ── -->
+  <div id="article-section" class="article-card">
+    <div class="article-timer-bar" id="timer-bar"></div>
+    <div class="article-inner">
+      <div class="article-meta">Yahoo! ニュース</div>
+      <div class="article-title">{{ article_title }}</div>
+      <div class="article-content">{{ article_content }}</div>
+      <div class="article-source">
+        <a href="{{ article_url }}" target="_blank" rel="noopener noreferrer">出典: Yahoo! ニュース →</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Quiz section ── -->
+  <div id="quiz-section" class="quiz-card">
+    <div class="question-text">{{ question }}</div>
+
+    <div class="ai-status">
+      <div class="ai-thinking-row">
+        <div class="ai-icon-badge">🤖</div>
+        <div class="thinking-dots">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        </div>
+        <span class="ai-thinking-msg">{{ ai_thinking }}</span>
+      </div>
+      <div class="timer-display" id="timer">0.0s</div>
     </div>
 
-    
+    <form id="quiz-form" action="/quiz" method="post">
+      <input type="hidden" name="time" id="reaction-time">
+      <div class="buzzer-wrap" id="buzzer-wrap">
+        <button type="button" id="buzzer" class="buzzer-button">早押し</button>
+        <span class="buzzer-hint">Press to buzz in</span>
+      </div>
+      <div id="answer-section" class="answer-section">
+        {% if choices %}
+        <div class="choice-grid" role="group" aria-label="選択肢">
+          {% for choice in choices %}
+          <button type="submit" name="choice" value="{{ loop.index0 }}" class="choice-btn">
+            <span class="choice-label">{{ "ABCD"[loop.index0] }}</span>
+            <span class="choice-text">{{ choice }}</span>
+          </button>
+          {% endfor %}
+        </div>
+        {% else %}
+        <input class="answer-input-field" type="text" name="answer" required placeholder="回答を入力...">
+        <button type="submit" class="answer-submit-btn">回答する</button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+{% endif %}
+
+</div>
+
+<script>
+{% if not result %}
+document.addEventListener('DOMContentLoaded', function() {
+  const articleSection = document.getElementById('article-section');
+  const quizSection = document.getElementById('quiz-section');
+  const startTime = Date.now();
+  let timerRunning = false;
+
+  setTimeout(() => {
+    articleSection.classList.add('fade-out');
+    setTimeout(() => {
+      articleSection.style.display = 'none';
+      quizSection.style.display = 'block';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => quizSection.classList.add('visible'));
+      });
+      timerRunning = true;
+      updateTimer();
+    }, 500);
+  }, 5000);
+
+  function updateTimer() {
+    if (!timerRunning) return;
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    document.getElementById('timer').textContent = elapsed + 's';
+    requestAnimationFrame(updateTimer);
+  }
+
+  document.getElementById('buzzer').addEventListener('click', function() {
+    const timeTaken = (Date.now() - startTime) / 1000;
+    document.getElementById('reaction-time').value = timeTaken;
+    document.getElementById('buzzer-wrap').style.display = 'none';
+    const answerSection = document.getElementById('answer-section');
+    answerSection.style.display = 'flex';
+    const firstInput = answerSection.querySelector('input[type="text"], .choice-btn');
+    if (firstInput) firstInput.focus();
+    timerRunning = false;
+  });
+
+  // 選択肢を押したら二重に送信されないようにする（押したボタンの値は hidden で送る）
+  const quizForm = document.getElementById('quiz-form');
+  quizForm.addEventListener('submit', function(e) {
+    if (quizForm.dataset.submitting) {
+      e.preventDefault();
+      return;
+    }
+    quizForm.dataset.submitting = '1';
+    if (e.submitter && e.submitter.name === 'choice') {
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'choice';
+      hidden.value = e.submitter.value;
+      quizForm.appendChild(hidden);
+      quizForm.querySelectorAll('.choice-btn').forEach(function(b) { b.disabled = true; });
+    }
+  });
+});
+{% endif %}
+</script>
 </body>
 </html>

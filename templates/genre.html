@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ジャンル選択 — JAIJAI</title>
+<link rel="icon" type="image/png" href="/static/images/aiquiz-favicon.png">
+<link rel="stylesheet" href="/static/css/theme.css">
+<style>
+  body { display: flex; flex-direction: column; }
+
+  .section-header {
+    text-align: center; margin-bottom: 0;
+    animation: fadeUp 0.7s var(--ease) 0.1s both;
+  }
+  .section-label {
+    font-size: 9px; font-weight: 300; letter-spacing: 0.28em;
+    text-transform: uppercase; color: rgba(26,26,24,0.45); margin-bottom: 10px;
+  }
+  .section-title {
+    font-family: var(--font-display);
+    font-size: 40px; font-weight: 300; letter-spacing: 0.08em; color: var(--charcoal);
+  }
+
+  .genre-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(184,150,46,0.14); border-radius: 2px;
+    width: 100%; max-width: 720px; overflow: hidden;
+    animation: fadeUp 0.8s var(--ease) 0.25s both;
+  }
+  .genre-header {
+    padding: 22px 40px 18px;
+    border-bottom: 1px solid rgba(184,150,46,0.1);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .genre-header-line { width: 20px; height: 1px; background: var(--gold); opacity: 0.7; flex-shrink: 0; }
+  .genre-header-title {
+    font-family: var(--font-display); font-size: 17px; font-weight: 400;
+    letter-spacing: 0.1em; color: var(--charcoal);
+  }
+
+  .genre-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    padding: 28px 32px 32px; gap: 12px;
+  }
+  .genre-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 20px 12px; background: none;
+    border: 1px solid rgba(184,150,46,0.15); border-radius: 2px;
+    font-family: var(--font-body); cursor: pointer;
+    transition: all 0.3s var(--ease); position: relative; overflow: hidden;
+    opacity: 0; transform: translateY(10px);
+    transition: opacity 0.4s var(--ease), transform 0.4s var(--ease), background 0.3s, border-color 0.3s;
+  }
+  .genre-btn.visible { opacity: 1; transform: translateY(0); }
+  .genre-btn:hover {
+    background: rgba(184,150,46,0.06); border-color: rgba(184,150,46,0.4);
+    transform: translateY(-2px);
+  }
+  .genre-btn:active { transform: translateY(0); }
+  .genre-icon { font-size: 24px; line-height: 1; }
+  .genre-name {
+    font-size: 11px; font-weight: 300; letter-spacing: 0.14em;
+    color: var(--charcoal); text-align: center;
+  }
+
+  .cta-hint {
+    font-size: 10px; font-weight: 200; letter-spacing: 0.2em;
+    text-transform: uppercase; color: rgba(26,26,24,0.35);
+    animation: fadeUp 0.6s var(--ease) 0.55s both;
+  }
+
+  @media (max-width: 600px) {
+    .genre-grid { grid-template-columns: repeat(2, 1fr); padding: 20px; gap: 10px; }
+    .section-title { font-size: 30px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-letters" aria-hidden="true">
+  <span class="bg-letter" style="font-size:280px;top:-40px;left:-30px;transform:rotate(-8deg)">A</span>
+  <span class="bg-letter" style="font-size:180px;top:60px;left:20px;transform:rotate(-5deg)">B</span>
+  <span class="bg-letter" style="font-size:320px;top:200px;left:-60px;transform:rotate(3deg)">C</span>
+  <span class="bg-letter" style="font-size:220px;top:500px;left:-20px;transform:rotate(-6deg)">D</span>
+  <span class="bg-letter" style="font-size:300px;top:-20px;right:-50px;transform:rotate(6deg)">M</span>
+  <span class="bg-letter" style="font-size:200px;top:300px;right:-20px;transform:rotate(-4deg)">K</span>
+  <span class="bg-letter" style="font-size:260px;top:600px;right:-40px;transform:rotate(5deg)">Z</span>
+</div>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <a href="/" class="topbar-brand">JAIJAI</a>
+  </div>
+  <nav class="topbar-nav" id="topbarNav">
+    <a href="/" class="nav-btn active">ゲーム</a>
+    <a href="/dashboard" class="nav-btn">ダッシュボード</a>
+    <a href="/leaderboard" class="nav-btn">ランキング</a>
+  </nav>
+  <button class="hamburger-btn" id="hamburgerBtn" aria-label="メニューを開く">
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+  </button>
+</header>
+
+<main class="stage">
+  <div class="section-header">
+    <div class="section-label">Step 01</div>
+    <div class="section-title">ジャンルを選ぶ</div>
+  </div>
+
+  <div class="connector" style="margin:20px 0"></div>
+
+  <form action="/genre" method="post">
+    <div class="genre-card">
+      <div class="genre-header">
+        <div class="genre-header-line"></div>
+        <div class="genre-header-title">ニュースカテゴリー</div>
+      </div>
+      <div class="genre-grid">
+        <button type="submit" name="genre" value="top-picks"    class="genre-btn"><span class="genre-icon">🔥</span><span class="genre-name">ホットトピック</span></button>
+        <button type="submit" name="genre" value="domestic"     class="genre-btn"><span class="genre-icon">🇯🇵</span><span class="genre-name">国内</span></button>
+        <button type="submit" name="genre" value="world"        class="genre-btn"><span class="genre-icon">🌍</span><span class="genre-name">グローバル</span></button>
+        <button type="submit" name="genre" value="business"     class="genre-btn"><span class="genre-icon">💹</span><span class="genre-name">経済</span></button>
+        <button type="submit" name="genre" value="entertainment" class="genre-btn"><span class="genre-icon">🎬</span><span class="genre-name">エンタメ</span></button>
+        <button type="submit" name="genre" value="sports"       class="genre-btn"><span class="genre-icon">⚽</span><span class="genre-name">スポーツ</span></button>
+        <button type="submit" name="genre" value="it"           class="genre-btn"><span class="genre-icon">💻</span><span class="genre-name">IT</span></button>
+        <button type="submit" name="genre" value="science"      class="genre-btn"><span class="genre-icon">🔬</span><span class="genre-name">科学</span></button>
+        <button type="submit" name="genre" value="local"        class="genre-btn"><span class="genre-icon">📍</span><span class="genre-name">ローカル</span></button>
+      </div>
+    </div>
+  </form>
+
+  <div class="cta-hint" style="margin-top:20px">Select a category to continue</div>
+</main>
+
+<script>
+document.querySelectorAll('.genre-btn').forEach((btn, i) => {
+  setTimeout(() => btn.classList.add('visible'), 350 + i * 55);
+});
+
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+const topbarNav = document.getElementById('topbarNav');
+if (hamburgerBtn && topbarNav) {
+  hamburgerBtn.addEventListener('click', () => {
+    hamburgerBtn.classList.toggle('active');
+    topbarNav.classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!hamburgerBtn.contains(e.target) && !topbarNav.contains(e.target)) {
+      hamburgerBtn.classList.remove('active');
+      topbarNav.classList.remove('open');
+    }
+  });
+  topbarNav.addEventListener('click', (e) => {
+    if (e.target.classList.contains('nav-btn') || e.target.closest('.nav-btn')) {
+      hamburgerBtn.classList.remove('active');
+      topbarNav.classList.remove('open');
+    }
+  });
+}
+</script>
+</body>
+</html>

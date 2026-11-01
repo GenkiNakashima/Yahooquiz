@@ -1,176 +1,273 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-    <title>結果発表 - AI早押しクイズ対決</title>
-    <link rel="stylesheet" href="static/css/style.css">
-    <style>
-        .auth-menu {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            display: flex;
-            gap: 10px;
-            z-index: 100;
-        }
-        .auth-menu button, .auth-menu a {
-            padding: 10px 20px;
-            background: #4CAF50;
-            color: white;
-            text-decoration: none;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        .auth-menu button:hover, .auth-menu a:hover {
-            background: #45a049;
-        }
-        .user-info {
-            background: white;
-            padding: 8px 15px;
-            border-radius: 5px;
-            color: #333;
-            font-size: 14px;
-        }
-        .points-earned {
-            background: #4CAF50;
-            color: white;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
-            text-align: center;
-            font-size: 18px;
-            font-weight: bold;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>結果発表 — JAIJAI</title>
+<link rel="icon" type="image/png" href="/static/images/aiquiz-favicon.png">
+<link rel="stylesheet" href="/static/css/theme.css">
+<style>
+  body { display: flex; flex-direction: column; }
+
+  .result-stage {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 24px 32px 80px; gap: 20px;
+    position: relative; z-index: 1;
+  }
+
+  /* Score board */
+  .scoreboard {
+    display: flex; align-items: center; gap: 0;
+    width: 100%; max-width: 680px;
+    background: var(--glass-dark);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-light); border-radius: 2px;
+    overflow: hidden; animation: fadeUp 0.8s var(--ease) 0.1s both;
+    position: relative;
+  }
+  .scoreboard::after {
+    content: ''; position: absolute;
+    bottom: 0; left: 48px; right: 48px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    opacity: 0.5;
+  }
+  .score-side {
+    flex: 1; padding: 40px 32px; text-align: center;
+  }
+  .score-who {
+    font-size: 9px; font-weight: 300; letter-spacing: 0.28em;
+    text-transform: uppercase; color: rgba(245,242,236,0.4); margin-bottom: 12px;
+  }
+  .score-num {
+    font-family: var(--font-display); font-size: 80px; font-weight: 300;
+    letter-spacing: 0.02em; line-height: 1;
+    color: var(--off-white);
+  }
+  .score-label {
+    font-size: 10px; font-weight: 200; letter-spacing: 0.2em;
+    text-transform: uppercase; color: rgba(245,242,236,0.35); margin-top: 8px;
+  }
+  .score-divider {
+    width: 1px; height: 80px; flex-shrink: 0;
+    background: linear-gradient(to bottom, transparent, rgba(184,150,46,0.4), transparent);
+    align-self: center;
+  }
+  .vs-text {
+    font-family: var(--font-display); font-size: 20px; font-weight: 300;
+    letter-spacing: 0.18em; color: rgba(245,242,236,0.2); padding: 0 20px;
+  }
+
+  /* Outcome card */
+  .outcome-card {
+    width: 100%; max-width: 680px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(184,150,46,0.14); border-radius: 2px;
+    padding: 36px 40px; text-align: center;
+    animation: fadeUp 0.8s var(--ease) 0.25s both;
+  }
+  .outcome-title {
+    font-family: var(--font-display); font-size: 44px; font-weight: 300;
+    letter-spacing: 0.1em; margin-bottom: 10px;
+  }
+  .outcome-title.win  { color: #1A5A2E; }
+  .outcome-title.lose { color: #8B3030; }
+  .outcome-title.draw { color: var(--charcoal); }
+  .outcome-sub {
+    font-size: 11px; font-weight: 200; letter-spacing: 0.2em;
+    text-transform: uppercase; color: rgba(26,26,24,0.4);
+  }
+
+  /* Points earned banner */
+  .points-banner {
+    width: 100%; max-width: 680px; display: none;
+    background: rgba(26,90,46,0.12); border: 1px solid rgba(26,90,46,0.25);
+    border-radius: 2px; padding: 18px 32px; text-align: center;
+    animation: fadeUp 0.6s var(--ease) both;
+  }
+  .points-banner-text {
+    font-family: var(--font-display); font-size: 22px; font-weight: 400;
+    letter-spacing: 0.06em; color: #6ABF8A;
+  }
+
+  /* Actions */
+  .actions-wrap {
+    display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+    animation: fadeUp 0.8s var(--ease) 0.4s both;
+  }
+  .retry-btn {
+    display: inline-flex; align-items: center; gap: 16px;
+    background: var(--charcoal); border: 1px solid var(--charcoal);
+    border-radius: 2px; padding: 0 40px; height: 56px;
+    font-family: var(--font-display); font-size: 18px; font-weight: 400;
+    letter-spacing: 0.12em; color: var(--off-white); text-decoration: none;
+    transition: all 0.35s var(--ease); position: relative; overflow: hidden;
+  }
+  .retry-btn::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, var(--gold) 0%, transparent 60%);
+    opacity: 0; transition: opacity 0.35s;
+  }
+  .retry-btn:hover { border-color: var(--gold); transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
+  .retry-btn:hover::before { opacity: 0.1; }
+  .retry-btn span { position: relative; z-index: 1; }
+
+  .ghost-btn {
+    display: inline-flex; align-items: center;
+    background: transparent; border: 1px solid rgba(26,26,24,0.2);
+    border-radius: 2px; padding: 0 32px; height: 56px;
+    font-family: var(--font-body); font-size: 10px; font-weight: 300;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    color: rgba(26,26,24,0.55); text-decoration: none;
+    transition: all 0.3s var(--ease);
+  }
+  .ghost-btn:hover { border-color: rgba(26,26,24,0.4); color: var(--charcoal); }
+
+  @media (max-width: 600px) {
+    .score-num { font-size: 56px; }
+    .outcome-title { font-size: 32px; }
+    .scoreboard { flex-direction: column; }
+    .score-divider { width: 80px; height: 1px; }
+  }
+</style>
 </head>
 <body>
-    <!-- Auth Menu -->
-    <div class="auth-menu" id="authMenu"></div>
 
-    <div class="container">
-        <h1>結果発表</h1>
-        <div id="pointsMessage" class="points-earned" style="display:none;"></div>
-        <div class="score-board">
-            <div class="player-score">
-                <h2>あなたのスコア</h2>
-                <p>{{ player_score }}点</p>
-            </div>
-            <div class="vs">VS</div>
-            <div class="ai-score">
-                <h2>AIのスコア</h2>
-                <p>{{ ai_score }}点</p>
-            </div>
-        </div>
-        
-        <<div class="result-message {% if player_score > ai_score %}win{% elif player_score < ai_score %}lose{% else %}draw{% endif %}">
-            {% if player_score > ai_score %}
-                <h2>🎉 おめでとう！あなたの勝利です！ 🎉</h2>
-            {% elif player_score < ai_score %}
-                <h2>😢 AIの勝利...次は頑張ろう！</h2>
-            {% else %}
-                <h2>🤝 引き分け！いい勝負でした！</h2>
-            {% endif %}
-        </div>
-        
-       
-        
-        <a href="/" class="retry-button">もう一度チャレンジ</a>
+<div class="bg-letters" aria-hidden="true">
+  <span class="bg-letter" style="font-size:280px;top:-40px;left:-30px;transform:rotate(-8deg)">A</span>
+  <span class="bg-letter" style="font-size:320px;top:200px;left:-60px;transform:rotate(3deg)">C</span>
+  <span class="bg-letter" style="font-size:260px;top:700px;left:-40px;transform:rotate(4deg)">N</span>
+  <span class="bg-letter" style="font-size:300px;top:-20px;right:-50px;transform:rotate(6deg)">M</span>
+  <span class="bg-letter" style="font-size:200px;top:300px;right:-20px;transform:rotate(-4deg)">K</span>
+  <span class="bg-letter" style="font-size:260px;top:600px;right:-40px;transform:rotate(5deg)">Z</span>
+</div>
+
+<header class="topbar">
+  <div class="topbar-left" id="topbarLeft">
+    <span class="topbar-brand">JAIJAI</span>
+  </div>
+  <nav class="topbar-nav" id="topbarNav"></nav>
+  <button class="hamburger-btn" id="hamburgerBtn" aria-label="メニューを開く">
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+  </button>
+</header>
+
+<main class="result-stage">
+  <!-- Points banner -->
+  <div class="points-banner" id="pointsMessage">
+    <div class="points-banner-text" id="pointsText"></div>
+  </div>
+
+  <!-- Scoreboard -->
+  <div class="scoreboard">
+    <div class="score-side">
+      <div class="score-who">あなた</div>
+      <div class="score-num">{{ player_score }}</div>
+      <div class="score-label">Points</div>
     </div>
+    <div class="score-divider"></div>
+    <div class="vs-text">VS</div>
+    <div class="score-divider"></div>
+    <div class="score-side">
+      <div class="score-who">AI</div>
+      <div class="score-num">{{ ai_score }}</div>
+      <div class="score-label">Points</div>
+    </div>
+  </div>
 
-    <script src="/static/javascript/api.js"></script>
-    <script>
-        // Display auth menu
-        const authMenu = document.getElementById('authMenu');
-        const accessToken = localStorage.getItem('access_token');
+  <!-- Outcome -->
+  <div class="outcome-card">
+    {% if player_score > ai_score %}
+      <div class="outcome-title win">おめでとう！</div>
+      <div class="outcome-sub">You defeated the AI — well done!</div>
+    {% elif player_score < ai_score %}
+      <div class="outcome-title lose">惜しかった...</div>
+      <div class="outcome-sub">The AI won this round. Try again!</div>
+    {% else %}
+      <div class="outcome-title draw">引き分け！</div>
+      <div class="outcome-sub">A perfectly matched battle!</div>
+    {% endif %}
+  </div>
 
-        if (accessToken) {
-            // User is logged in - submit match result
-            submitMatchResult();
+  <!-- Actions -->
+  <div class="actions-wrap">
+    <a href="/" class="retry-btn"><span>もう一度チャレンジ</span></a>
+    <a href="/dashboard" class="ghost-btn">ダッシュボード</a>
+  </div>
+</main>
 
-            authMenu.innerHTML = `
-                <a href="/dashboard">ダッシュボード</a>
-                <a href="/shop">ショップ</a>
-                <a href="/leaderboard">ランキング</a>
-            `;
-        } else {
-            authMenu.innerHTML = `
-                <div class="user-info">ログインして対戦結果を記録しよう！</div>
-                <a href="/login">ログイン</a>
-                <a href="/register">新規登録</a>
-            `;
-        }
+<script src="/static/javascript/api.js"></script>
+<script>
+const accessToken = localStorage.getItem('access_token');
 
-        async function submitMatchResult() {
-            const playerScore = {{ player_score }};
-            const aiScore = {{ ai_score }};
-            const aiLevel = "{{ ai_level }}";
+if (accessToken) {
+  fetch('/api/users/me', { headers: { 'Authorization': `Bearer ${accessToken}` } })
+    .then(r => r.ok ? r.json() : null)
+    .then(user => {
+      if (user) {
+        document.getElementById('topbarLeft').innerHTML = `
+          <span class="topbar-brand">${user.display_name || 'ゲスト'}</span>
+          <div class="topbar-divider"></div>
+          <div class="topbar-points"><span class="pt-val">${user.points}</span><span>pt</span></div>
+        `;
+      }
+    });
+  document.getElementById('topbarNav').innerHTML = `
+    <a href="/dashboard" class="nav-btn">ダッシュボード</a>
+    <a href="/shop" class="nav-btn">ショップ</a>
+    <a href="/leaderboard" class="nav-btn">ランキング</a>
+  `;
+  submitMatchResult();
+} else {
+  document.getElementById('topbarNav').innerHTML = `
+    <a href="/login" class="nav-btn">ログイン</a>
+    <a href="/register" class="nav-btn">新規登録</a>
+  `;
+}
 
-            // Determine winner
-            const playerWon = playerScore > aiScore;
+async function submitMatchResult() {
+  // 勝敗・スコアはサーバー側の回答記録から確定する（このページからは送らない）。
+  // 同じゲームは1回しか記録されないため、再読み込みしても二重にポイントは付かない。
+  try {
+    const r = await fetch('/api/matches', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    if (r.ok) {
+      const data = await r.json();
+      if (data.is_winner && data.points_awarded) {
+        const banner = document.getElementById('pointsMessage');
+        document.getElementById('pointsText').textContent = `+${data.points_awarded} ポイント獲得！`;
+        banner.style.display = 'block';
+      }
+    }
+  } catch (e) { console.error(e); }
+}
 
-            try {
-                // Generate a temporary AI user ID (in production, this should come from the backend)
-                const tempAiUserId = '00000000-0000-0000-0000-000000000000';
-
-                // Get current user ID
-                const userResponse = await fetch('/api/users/me', {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
-
-                if (!userResponse.ok) {
-                    console.error('Failed to get user info');
-                    return;
-                }
-
-                const userData = await userResponse.json();
-                const userId = userData.id;
-
-                // Submit match result
-                const matchData = {
-                    match_type: '1v1_ai',
-                    players: [
-                        {
-                            user_id: userId,
-                            score: playerScore,
-                            is_winner: playerWon
-                        }
-                    ],
-                    metadata: {
-                        ai_level: aiLevel,
-                        ai_score: aiScore,
-                        quiz_type: 'news'
-                    }
-                };
-
-                const response = await fetch('/api/matches', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(matchData)
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-
-                    if (playerWon && data.points_awarded) {
-                        const pointsMessage = document.getElementById('pointsMessage');
-                        pointsMessage.textContent = `🎉 ${data.points_awarded}ポイント獲得！`;
-                        pointsMessage.style.display = 'block';
-                    }
-
-                    console.log('Match result submitted successfully');
-                } else {
-                    console.error('Failed to submit match result');
-                }
-            } catch (error) {
-                console.error('Error submitting match result:', error);
-            }
-        }
-    </script>
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+const topbarNav = document.getElementById('topbarNav');
+if (hamburgerBtn && topbarNav) {
+  hamburgerBtn.addEventListener('click', () => {
+    hamburgerBtn.classList.toggle('active');
+    topbarNav.classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!hamburgerBtn.contains(e.target) && !topbarNav.contains(e.target)) {
+      hamburgerBtn.classList.remove('active');
+      topbarNav.classList.remove('open');
+    }
+  });
+  topbarNav.addEventListener('click', (e) => {
+    if (e.target.classList.contains('nav-btn') || e.target.closest('.nav-btn')) {
+      hamburgerBtn.classList.remove('active');
+      topbarNav.classList.remove('open');
+    }
+  });
+}
+</script>
 </body>
 </html>

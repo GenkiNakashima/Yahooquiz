@@ -1,13 +1,59 @@
 # quiz_generator.py
-from groq import Groq
 import random
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import requests
 from bs4 import BeautifulSoup
-import os
+
+import llm_client
+
+GENRE_URLS = {
+    'top-picks': 'https://news.yahoo.co.jp/topics/top-picks',
+    'domestic': 'https://news.yahoo.co.jp/topics/domestic',
+    'world': 'https://news.yahoo.co.jp/topics/world',
+    'business': 'https://news.yahoo.co.jp/topics/business',
+    'entertainment': 'https://news.yahoo.co.jp/topics/entertainment',
+    'sports': 'https://news.yahoo.co.jp/topics/sports',
+    'it': 'https://news.yahoo.co.jp/topics/it',
+    'science': 'https://news.yahoo.co.jp/topics/science',
+    'local': 'https://news.yahoo.co.jp/topics/local',
+}
+
+# Yahoo!ニュースから記事を取得できない場合に使うサンプル記事
+SAMPLE_ARTICLES = [
+    {
+        'content': '日本銀行は本日、政策金利を0.1%引き上げることを発表しました。これは2年ぶりの利上げとなり、インフレ対策の一環として実施されます。市場関係者からは慎重な反応が見られており、今後の経済動向に注目が集まっています。',
+        'url': 'https://example.com/news1',
+        'title': '日銀が2年ぶりの利上げを決定'
+    },
+    {
+        'content': '東京都は2025年度から新しい環境税を導入することを発表しました。この税制は企業の二酸化炭素排出量に応じて課税され、環境保護の推進を図ります。対象となる企業は約1000社で、年間約500億円の税収を見込んでいます。',
+        'url': 'https://example.com/news2',
+        'title': '東京都が新環境税を導入へ'
+    },
+    {
+        'content': '大手自動車メーカーのトヨタ自動車は、2030年までに電気自動車の生産台数を年間350万台に増加させる計画を発表しました。これは現在の約10倍の規模となり、カーボンニュートラル実現に向けた取り組みの一環です。',
+        'url': 'https://example.com/news3',
+        'title': 'トヨタ、EV生産を大幅拡大へ'
+    }
+]
+
+
+def _shuffle_choices(quiz):
+    """LLM は正解を先頭に置きがちなため、選択肢の順番をシャッフルして正解の位置を偏らせない"""
+    choices = quiz.get('choices')
+    if not choices:
+        return
+    correct = choices[quiz['answer_index']]
+    shuffled = random.sample(choices, len(choices))
+    quiz['choices'] = shuffled
+    quiz['answer_index'] = shuffled.index(correct)
+    quiz['answer'] = correct
+
 
 class QuizGenerator:
-    def __init__(self, api_key):
-        self.api_key = api_key
+    def __init__(self):
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
@@ -34,25 +80,6 @@ class QuizGenerator:
                 }
             }
         }
-        # 利用可能なGroqモデル（無料枠で使用可能）
-        # llama-3.3-70b-versatile: 高性能で汎用的なモデル
-        # mixtral-8x7b-32768: 大きなコンテキストウィンドウ
-        # llama-3.1-8b-instant: 高速で軽量
-        self.model_name = "llama-3.3-70b-versatile"
-
-        # Groqクライアントの初期化
-        try:
-            self.client = Groq(api_key=self.api_key)
-            # モデルの動作確認
-            test_response = self.client.chat.completions.create(
-                messages=[{"role": "user", "content": "test"}],
-                model=self.model_name,
-                max_tokens=10
-            )
-            print(f"成功: Groqモデル '{self.model_name}' を使用します")
-        except Exception as e:
-            print(f"Groqモデルの初期化エラー: {e}")
-            raise Exception(f"利用可能なGroqモデルが見つかりませんでした: {e}")
 
     def simulate_ai_buzzer(self, level='normal'):
         """AIの早押し判定をレベルに応じてシミュレート"""
@@ -87,155 +114,126 @@ class QuizGenerator:
         }
         return random.choice(messages[level])
 
-    def get_news_article(self):
-        """サンプル記事を返す（Yahoo!ニュースが利用できない場合のフォールバック）"""
-        # Yahoo!ニュースのスクレイピングが難しい場合のサンプルデータ
-        sample_articles = [
-            {
-                'content': '日本銀行は本日、政策金利を0.1%引き上げることを発表しました。これは2年ぶりの利上げとなり、インフレ対策の一環として実施されます。市場関係者からは慎重な反応が見られており、今後の経済動向に注目が集まっています。',
-                'url': 'https://example.com/news1',
-                'title': '日銀が2年ぶりの利上げを決定'
-            },
-            {
-                'content': '東京都は2025年度から新しい環境税を導入することを発表しました。この税制は企業の二酸化炭素排出量に応じて課税され、環境保護の推進を図ります。対象となる企業は約1000社で、年間約500億円の税収を見込んでいます。',
-                'url': 'https://example.com/news2', 
-                'title': '東京都が新環境税を導入へ'
-            },
-            {
-                'content': '大手自動車メーカーのトヨタ自動車は、2030年までに電気自動車の生産台数を年間350万台に増加させる計画を発表しました。これは現在の約10倍の規模となり、カーボンニュートラル実現に向けた取り組みの一環です。',
-                'url': 'https://example.com/news3',
-                'title': 'トヨタ、EV生産を大幅拡大へ'
+    def _fetch_with_retry(self, url, max_retries=3, timeout=10):
+        """リトライ付きHTTPリクエスト（指数バックオフ）"""
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=self.headers, timeout=timeout)
+                response.raise_for_status()
+                return response
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                wait = 2 ** attempt + random.uniform(0.5, 1.5)
+                print(f"リクエスト失敗 (試行{attempt + 1}/{max_retries}): {e} - {wait:.1f}秒後にリトライ")
+                time.sleep(wait)
+
+    def get_news_articles(self, count, genre='business'):
+        """
+        Yahoo!ニュースから記事を count 件取得する（失敗した分はサンプル記事で補う）。
+        記事一覧ページは1回だけ取得し、各記事は並列に取得する。
+        """
+        articles = []
+        try:
+            links = self._get_article_links(genre)
+            random.shuffle(links)
+            # 取得に失敗する記事があっても一覧の全記事を取りに行かないよう、試行数に上限を設ける
+            candidates = links[:count * 2]
+            while len(articles) < count and candidates:
+                needed = count - len(articles)
+                batch, candidates = candidates[:needed], candidates[needed:]
+                with ThreadPoolExecutor(max_workers=len(batch)) as executor:
+                    articles.extend(a for a in executor.map(self._fetch_article, batch) if a)
+        except Exception as e:
+            print(f"記事一覧の取得エラー: {e}")
+
+        if len(articles) < count:
+            print(f"Yahoo!ニュースから取得できた記事は {len(articles)}/{count} 件のため、残りはサンプル記事を使用します")
+            samples = random.sample(SAMPLE_ARTICLES, len(SAMPLE_ARTICLES))
+            for i in range(count - len(articles)):
+                articles.append(dict(samples[i % len(samples)]))
+        return articles
+
+    def _get_article_links(self, genre):
+        """ジャンルのニュース一覧ページから記事へのリンク（重複なし）を取得する"""
+        url = GENRE_URLS.get(genre, GENRE_URLS['business'])
+        response = self._fetch_with_retry(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        news_feed = soup.find('ul', class_='newsFeed_list')
+        article_links = news_feed.find_all('a') if news_feed else []
+        hrefs = [a.get('href') for a in article_links if a.get('href')]
+        return list(dict.fromkeys(hrefs))
+
+    def _fetch_article(self, article_url):
+        """記事1件を取得する。取得できなければ None"""
+        try:
+            time.sleep(random.uniform(0.5, 1.5))
+
+            # 記事ページを取得
+            article_response = self._fetch_with_retry(article_url)
+            article_soup = BeautifulSoup(article_response.text, 'html.parser')
+
+            full_article_link = article_soup.find('a', {'data-ual-gotocontent': 'true'})
+            if not full_article_link:
+                return None
+            full_url = full_article_link.get('href')
+            if not full_url:
+                return None
+
+            time.sleep(random.uniform(0.5, 1.5))
+
+            # 全文ページを取得
+            full_response = self._fetch_with_retry(full_url)
+            full_soup = BeautifulSoup(full_response.text, 'html.parser')
+
+            article_content = full_soup.find('div', class_='article_body')
+            if not article_content:
+                return None
+            content_text = ' '.join([p.text.strip() for p in article_content.find_all(['p', 'h2'])])
+            if not content_text.strip():
+                return None
+
+            # タイトル取得: <article> > <header> > <h1>
+            title = None
+            article_tag = full_soup.find('article')
+            if article_tag:
+                header_tag = article_tag.find('header')
+                if header_tag:
+                    h1_tag = header_tag.find('h1')
+                    if h1_tag:
+                        title = h1_tag.get_text(strip=True)
+
+            if not title:
+                og_title = full_soup.find('meta', property='og:title')
+                if og_title:
+                    title = og_title.get('content', '').strip()
+
+            if not title:
+                title = 'タイトルなし'
+
+            print(f"記事取得成功: {title}")
+            return {
+                'content': content_text[:2000],
+                'url': full_url,
+                'title': title
             }
-        ]
-        
-        try:
-            # 実際のYahoo!ニュースからの取得を試行
-            url = "https://news.yahoo.co.jp/topics/business"
-            response = requests.get(url, headers=self.headers, timeout=10)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            news_feed = soup.find('ul', class_='newsFeed_list')
-            article_links = news_feed.find_all('a') if news_feed else []
-            
-            if article_links:
-                random_article = random.choice(article_links)
-                article_url = random_article.get('href')
-                
-                article_response = requests.get(article_url, headers=self.headers, timeout=10)
-                article_soup = BeautifulSoup(article_response.text, 'html.parser')
-                
-                full_article_link = article_soup.find('a', {
-                    'class': 'sc-gdv5m1-9 bxbqJP',
-                    'data-ual-gotocontent': 'true'
-                })
-                
-                if full_article_link:
-                    full_url = full_article_link.get('href')
-                    full_response = requests.get(full_url, headers=self.headers, timeout=10)
-                    full_soup = BeautifulSoup(full_response.text, 'html.parser')
-                    
-                    article_content = full_soup.find('div', class_='article_body')
-                    if article_content:
-                        content_text = ' '.join([p.text.strip() for p in article_content.find_all(['p', 'h2'])])
-                        return {
-                            'content': content_text[:2000],
-                            'url': full_url,
-                            'title': full_soup.find('h1').text.strip() if full_soup.find('h1') else 'タイトルなし'
-                        }
-            
-            # Yahoo!ニュースからの取得に失敗した場合、サンプル記事を使用
-            print("Yahoo!ニュースからの記事取得に失敗、サンプル記事を使用します")
-            return random.choice(sample_articles)
-            
         except Exception as e:
-            print(f"記事取得エラー: {e} - サンプル記事を使用します")
-            return random.choice(sample_articles)
-
-    def generate_quiz(self, text):
-        """AIによるクイズ生成"""
-        try:
-            prompt = f"""
-以下の文章から時事ネタのクイズを作成してください。
-1単語または短い語句で答えられる問題にしてください。
-以下のフォーマットで出力してください：
-
-Question: （ここに問題文）
-Answer: （ここに1単語または短い語句で答え）
-Explanation: （ここに解説）
-
-文章:
-{text}
-"""
-            # GroqのChat Completions APIを使用
-            response = self.client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "あなたは日本語でクイズを作成する専門家です。指定されたフォーマットに厳密に従ってクイズを生成してください。"
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                model=self.model_name,
-                max_tokens=500,
-                temperature=0.7
-            )
-
-            if response.choices and len(response.choices) > 0:
-                response_text = response.choices[0].message.content
-                lines = response_text.split('\n')
-                quiz_data = {}
-
-                for line in lines:
-                    line = line.strip()
-                    if line.startswith('Question:') or line.startswith('問題:'):
-                        quiz_data['question'] = line.replace('Question:', '').replace('問題:', '').strip()
-                    elif line.startswith('Answer:') or line.startswith('答え:') or line.startswith('回答:'):
-                        quiz_data['answer'] = line.replace('Answer:', '').replace('答え:', '').replace('回答:', '').strip()
-                    elif line.startswith('Explanation:') or line.startswith('解説:'):
-                        quiz_data['explanation'] = line.replace('Explanation:', '').replace('解説:', '').strip()
-
-                # 必要なフィールドが全て揃っているかチェック
-                if all(key in quiz_data for key in ['question', 'answer', 'explanation']):
-                    return quiz_data
-                else:
-                    print(f"クイズデータ不完全: {quiz_data}")
-                    return None
-
-            return None
-        except Exception as e:
-            # レート制限時のフォールバック（簡易問題を返す）
-            err_text = str(e)
-            print(f"クイズ生成エラー: {err_text}")
-            if '429' in err_text or 'RATE_LIMIT' in err_text or 'rate_limit' in err_text.lower():
-                # テキストから簡易的に固有名詞らしき語を抽出（非常に単純なフォールバック）
-                keywords = [w for w in text.split() if len(w) >= 2]
-                fallback_answer = (keywords[0][:12] if keywords else 'ニュース')
-                fallback_question = '本文のキーワードは何？'
-                fallback_explanation = 'レート制限のため簡易問題を表示しています。'
-                return {
-                    'question': fallback_question,
-                    'answer': fallback_answer,
-                    'explanation': fallback_explanation
-                }
+            print(f"記事候補の取得失敗: {e}")
             return None
 
-    def create_quiz(self):
-        """記事取得からクイズ生成までの一連の処理"""
-        try:
-            article_data = self.get_news_article()
-            if article_data:
-                quiz_data = self.generate_quiz(article_data['content'])
-                if quiz_data:
-                    # クイズデータに記事情報を追加
-                    quiz_data['article_content'] = article_data['content']
-                    quiz_data['article_url'] = article_data['url']
-                    quiz_data['article_title'] = article_data['title']
-                    return quiz_data
-            return None
-        except Exception as e:
-            print(f"クイズ作成エラー: {e}")
-            return None
+    def create_quiz_set(self, count, genre='business'):
+        """
+        記事を count 件取得し、1回の LLM 呼び出しで count 問のクイズを生成する。
+        記事取得はサンプル記事にフォールバックするため、失敗時に送出されるのは
+        llm_client.QuizGenerationError のみ。
+        """
+        articles = self.get_news_articles(count, genre)
+        quizzes = llm_client.generate_quizzes([a['content'] for a in articles])
+        for quiz, article in zip(quizzes, articles):
+            _shuffle_choices(quiz)
+            # クイズデータに記事情報を追加
+            quiz['article_content'] = article['content']
+            quiz['article_url'] = article['url']
+            quiz['article_title'] = article['title']
+        return quizzes

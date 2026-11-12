@@ -78,6 +78,9 @@ def test_purchase_success_updates_everything_together(db):
     assert ok and result['remaining_points'] == 700
     assert _points(db, user_id) == 700
     assert _count(db, 'user_icons', user_id=user_id, icon_id=icon_id) == 1
+    # 所持データはユーザーとアイコンの組で決まる ID に保存する
+    owned = db.collection('user_icons').document(f'{user_id}_{icon_id}').get()
+    assert owned.exists and owned.to_dict()['user_id'] == user_id and owned.to_dict()['icon_id'] == icon_id
     (tx,) = [d.to_dict() for d in db.collection('points_transactions').stream()]
     assert tx['user_id'] == user_id and tx['amount'] == -300
     assert tx['type'] == 'icon_purchase' and tx['reference_id'] == icon_id
@@ -94,9 +97,10 @@ def test_purchase_rejections_write_nothing(db, setup, expected_error):
     user_id = _user(db, points=50 if setup == 'insufficient' else 1000)
     icon_id = _icon(db, price=100, is_limited=(setup == 'sold_out'), total_supply=1)
     if setup == 'owned':
-        db.collection('user_icons').document(str(uuid.uuid4())).set({'user_id': user_id, 'icon_id': icon_id})
+        db.collection('user_icons').document(f'{user_id}_{icon_id}').set({'user_id': user_id, 'icon_id': icon_id})
     if setup == 'sold_out':
-        db.collection('user_icons').document(str(uuid.uuid4())).set({'user_id': 'someone', 'icon_id': icon_id})
+        db.collection('user_icons').document(f'someone_{icon_id}').set({'user_id': 'someone', 'icon_id': icon_id})
+        db.collection('icons').document(icon_id).update({'purchased_count': 1})
     if setup == 'no_user':
         user_id = 'no-such-user'
     if setup == 'no_icon':
@@ -161,30 +165,53 @@ def test_limited_icon_sells_exactly_up_to_supply(db):
     assert db.collection('icons').document(icon_id).get().to_dict()['purchased_count'] == 2
 
 
-def test_concurrent_purchases_of_unlimited_icon_by_different_users(db):
-    """通常のアイコンは、別ユーザーどうしの同時購入が競合で失敗しない（アイコン側を書き換えない）"""
+@pytest.fixture
+def purchase_attempts(monkeypatch):
+    """購入トランザクションの本体が、ユーザーごとに何回実行されたか（競合すると再実行される）"""
+    attempts = {}
+    lock = threading.Lock()
+    original = icon_service._purchase_in_transaction.to_wrap
+
+    def counting(transaction, db, user_id, icon_id):
+        with lock:
+            attempts[user_id] = attempts.get(user_id, 0) + 1
+        return original(transaction, db, user_id, icon_id)
+
+    monkeypatch.setattr(icon_service._purchase_in_transaction, 'to_wrap', counting)
+    return attempts
+
+
+def test_concurrent_purchases_of_unlimited_icon_by_different_users(db, purchase_attempts):
+    """通常のアイコンは、別ユーザーどうしの同時購入が競合しない（アイコン側を書き換えず、再試行も起きない）"""
     icon_id = _icon(db, price=100)
     user_ids = [_user(db, points=1000) for _ in range(5)]
 
     results = _run_in_parallel([lambda u=u: icon_service.purchase_icon(u, icon_id) for u in user_ids])
 
     assert all(ok for ok, _ in results)
-    assert all(_points(db, u) == 900 for u in user_ids)
+    # 各ユーザーのポイントがちょうど1回だけ減り、履歴と所持データも1件ずつ
+    for u in user_ids:
+        assert _points(db, u) == 900
+        (tx,) = [d.to_dict() for d in db.collection('points_transactions').where('user_id', '==', u).stream()]
+        assert tx['amount'] == -100 and tx['reference_id'] == icon_id
+        assert _count(db, 'user_icons', user_id=u, icon_id=icon_id) == 1
+    # トランザクションの中でクエリを使わないので、別ユーザーどうしでは再試行が起きない
+    assert purchase_attempts == {u: 1 for u in user_ids}
     assert 'purchased_count' not in db.collection('icons').document(icon_id).get().to_dict()
 
 
-def test_existing_purchases_count_toward_limited_supply(db):
-    """在庫数のカウンタが無い既存データでも、既存の購入数を数えて上限を守る"""
+def test_limited_icon_uses_purchased_count(db):
+    """限定アイコンの販売数は icons.purchased_count で判定する（移行スクリプトで既存の購入数を設定済みの前提）"""
     icon_id = _icon(db, price=100, is_limited=True, total_supply=3)
-    for _ in range(2):
-        db.collection('user_icons').document(str(uuid.uuid4())).set({'user_id': str(uuid.uuid4()), 'icon_id': icon_id})
+    db.collection('icons').document(icon_id).update({'purchased_count': 2})
     first, second = _user(db, points=1000), _user(db, points=1000)
 
     assert icon_service.purchase_icon(first, icon_id)[0] is True
     ok, result = icon_service.purchase_icon(second, icon_id)
 
     assert not ok and result['error'] == 'This limited icon is sold out'
-    assert _count(db, 'user_icons', icon_id=icon_id) == 3
+    assert db.collection('icons').document(icon_id).get().to_dict()['purchased_count'] == 3
+    assert _points(db, second) == 1000
 
 
 # ---------------------------------------------------------------------------

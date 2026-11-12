@@ -25,7 +25,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key')
+# セッション Cookie の署名鍵。既定値にフォールバックすると誰でも Cookie を偽造できるため、未設定なら起動しない
+app.secret_key = os.environ.get('SECRET_KEY', '').strip()
+if not app.secret_key:
+    raise ValueError(
+        "SECRET_KEY が設定されていません。ローカルでは .env に設定してください"
+        "（生成例: python -c \"import secrets; print(secrets.token_hex(32))\"）"
+    )
 
 # Setup CORS
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -74,7 +80,7 @@ seed_icons_if_empty()
 llm_providers = llm_client.configured_providers()
 if not llm_providers:
     raise ValueError(
-        "LLM が設定されていません。CEREBRAS_API_KEY（+ CEREBRAS_BASE_URL / CEREBRAS_MODEL）または "
+        "LLM が設定されていません。GROQ_API_KEY（+ 任意で GROQ_BASE_URL / GROQ_MODELS）または "
         "OPENROUTER_API_KEY（+ OPENROUTER_BASE_URL / OPENROUTER_MODELS）を設定してください"
     )
 logger.info(f"利用する LLM プロバイダ（優先順）: {', '.join(llm_providers)}")

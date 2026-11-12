@@ -18,7 +18,7 @@
    ```bash
    cp .env.docker.example .env.docker
    # .env.docker を編集して GOOGLE_CLOUD_PROJECT と
-   # CEREBRAS_API_KEY / OPENROUTER_API_KEY / OPENROUTER_MODELS などを設定
+   # GROQ_API_KEY / OPENROUTER_API_KEY / OPENROUTER_MODELS などを設定
    ```
 
 3. **起動**
@@ -68,7 +68,7 @@ docker run -p 8080:8080 \
 docker-compose --env-file .env.docker config
 
 # または個別に確認
-docker run --env-file .env.docker yahooquiz-app env | grep -E '^(CEREBRAS|OPENROUTER|LLM)_' | sed 's/_API_KEY=.*/_API_KEY=(設定済み)/'
+docker run --env-file .env.docker yahooquiz-app env | grep -E '^(GROQ|OPENROUTER|LLM)_' | sed 's/_API_KEY=.*/_API_KEY=(設定済み)/'
 ```
 
 ## 本番環境デプロイ
@@ -90,6 +90,8 @@ Cloud Run 上では、サービスに割り当てたサービスアカウント�
      --platform managed \
      --region asia-northeast1 \
      --allow-unauthenticated \
-     --set-env-vars '^@^JWT_SECRET_KEY=YOUR_SECRET@CEREBRAS_API_KEY=YOUR_CEREBRAS_KEY@CEREBRAS_BASE_URL=https://api.cerebras.ai/v1@CEREBRAS_MODEL=qwen-3.8-27b@OPENROUTER_API_KEY=YOUR_OPENROUTER_KEY@OPENROUTER_BASE_URL=https://openrouter.ai/api/v1@OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free'
+     --set-env-vars '^@^GROQ_BASE_URL=https://api.groq.com/openai/v1@GROQ_MODELS=openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b@OPENROUTER_BASE_URL=https://openrouter.ai/api/v1@OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free' \
+     --set-secrets 'SECRET_KEY=flask-secret-key:latest,JWT_SECRET_KEY=jwt-secret-key:latest,GROQ_API_KEY=groq-api-key:latest,OPENROUTER_API_KEY=openrouter-api-key:latest'
    ```
-   ※ `OPENROUTER_MODELS` の値にカンマを含むため、`^@^` で区切り文字を `@` に変更しています。
+   ※ `GROQ_MODELS` / `OPENROUTER_MODELS` の値にカンマを含むため、`^@^` で区切り文字を `@` に変更しています。
+   ※ API キー・`SECRET_KEY`・`JWT_SECRET_KEY` は Secret Manager から読み込みます。シークレットの作成と権限の付与は README の「デプロイ」を参照してください。

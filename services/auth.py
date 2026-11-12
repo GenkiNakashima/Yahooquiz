@@ -11,7 +11,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 # JWT Configuration
-JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-this')
+# 署名鍵。既定値にフォールバックすると誰でもトークンを偽造できるため、未設定なら起動しない
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', '').strip()
+if not JWT_SECRET_KEY:
+    raise ValueError(
+        "JWT_SECRET_KEY が設定されていません。ローカルでは .env に設定してください"
+        "（生成例: python -c \"import secrets; print(secrets.token_hex(32))\"）"
+    )
 JWT_ALGORITHM = 'HS256'
 ACCESS_TOKEN_EXPIRES = timedelta(minutes=15)
 REFRESH_TOKEN_EXPIRES_DAYS = 14

@@ -42,7 +42,10 @@ def main():
     texts = [a['content'] for a in articles]
     messages = llm_client.build_messages(texts)
     print(f"記事 {len(texts)} 件（プロンプトでの文字数: "
-          f"{[len(llm_client.truncate_article(t)) for t in texts]}）\n")
+          f"{[len(llm_client.truncate_article(t)) for t in texts]}）")
+    for i, a in enumerate(articles, start=1):
+        print(f"  記事{i}: {a['title']}")
+    print()
 
     failed = False
     for cand in groq:
@@ -87,9 +90,17 @@ def main():
             print(f"  content(先頭300文字): {content[:300]}\n")
             failed = True
             continue
-        for i, quiz in enumerate(results, start=1):
+        raw_order = [q.get('article_index') if isinstance(q, dict) else None
+                     for q in llm_client._parse_json(content).get('quizzes', [])]
+        print(f"  出力の並び（article_index）: {raw_order}"
+              f"{'' if raw_order == list(range(1, QUIZ_COUNT + 1)) else '  ← 記事の順番と違う（article_index で並べ替える）'}")
+        # results は article_index で記事の順番に並べ替え済み（Q{i} は記事{i} から作られた問題）
+        for i, (quiz, article) in enumerate(zip(results, articles), start=1):
+            print(f"  Q{i} [記事{i}: {article['title']}]")
             if quiz:
-                print(f"  Q{i}: {quiz['question']}  正解={quiz['answer']!r}  選択肢={quiz['choices']}")
+                print(f"      {quiz['question']}  正解={quiz['answer']!r}  選択肢={quiz['choices']}")
+            else:
+                print("      （問題なし: 検証失敗・article_index の重複など。本番ではこの記事の問題だけ再生成する）")
         if errors:
             print(f"  NG: 検証失敗 {errors}")
             failed = True

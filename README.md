@@ -198,6 +198,12 @@ Groq のレート制限はモデルごとなので、1つ目のモデルが 429 
   ```bash
   .venv/bin/python scripts/check_groq_models.py
   ```
+- OpenRouter の無料モデルが実際のクイズ生成で使えるかは、次のスクリプトで確認できます。`OPENROUTER_MODELS` の各モデルを
+  models 配列（自動フォールバック）を使わずに1回ずつ呼び出し、429 の原因（upstream の共有枠か、OpenRouter 自身の無料枠の上限か）・
+  finish_reason・トークン使用量・推論の混入・生成された5問の検証結果を表示します（モデルの数だけ無料枠を消費します）。
+  ```bash
+  .venv/bin/python scripts/check_openrouter_models.py
+  ```
 - OpenRouter の無料モデルは予告なく入れ替わるため、定期的に確認して `OPENROUTER_MODELS` を更新してください。
   ```bash
   curl -s https://openrouter.ai/api/v1/models | jq -r '.data[].id' | grep ':free$'

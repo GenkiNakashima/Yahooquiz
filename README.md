@@ -270,6 +270,11 @@ gcloud config set project YOUR_PROJECT_ID
 ```
 
 2. Firestore の準備
+   - ローカル開発で作ったテストデータが本番に残っている場合は、先に削除すること（`icons` は削除しない）
+     ```bash
+     python scripts/delete_test_data.py --project YOUR_PROJECT_ID          # 確認のみ（件数を表示）
+     python scripts/delete_test_data.py --project YOUR_PROJECT_ID --apply  # 実際に削除（プロジェクト ID の入力を求められる）
+     ```
    - 既存のデータがある場合は、新しいコードをデプロイする前に `user_icons` の移行を1回実行すること
      （所持アイコンのドキュメント ID を `{user_id}_{icon_id}` にそろえ、限定アイコンの `purchased_count` を設定する。何度実行しても同じ結果になる）
      ```bash

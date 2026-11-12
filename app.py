@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import database (Firestore) and API routes
-from db import init_db
+from db import init_db, check_firestore_target
 from api_routes import api
 from middleware.security import setup_security_headers
 
@@ -43,6 +43,8 @@ setup_security_headers(app)
 app.register_blueprint(api)
 
 # Initialize Firestore
+# 本番（Cloud Run）以外では、エミュレーターが設定・起動されていなければここで起動を止める（本番のデータを守るため）
+check_firestore_target()
 try:
     init_db()
     logger.info("Firestore client initialized")

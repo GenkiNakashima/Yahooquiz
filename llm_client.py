@@ -55,7 +55,8 @@ SYSTEM_PROMPT = (
 USER_PROMPT_TEMPLATE = """以下の {n} 件のニュース記事から、4択クイズを記事ごとに1問ずつ、合計 {n} 問作成してください。
 
 # 条件
-- 1問目は記事1、2問目は記事2…のように、各問題は対応する記事の内容から作り、記事の順番どおりに並べる
+- 各記事から1問ずつ作り、各問題の article_index に、その問題を作った記事の番号（「## 記事1」なら 1）を入れる。
+  すべての記事番号（1〜{n}）をちょうど1回ずつ使い、同じ記事番号を2つの問題に使わない
 - 同じ内容の記事が複数ある場合も、問題同士は重複させない
 - 問題文は記事を読めば答えられる内容にする
 - 問題文・解説に記事番号や「記事3で」「この記事では」のような記事を指す表現を含めない（プレイヤーには1問につき1記事だけが表示され、記事番号は見えない）
@@ -67,7 +68,7 @@ USER_PROMPT_TEMPLATE = """以下の {n} 件のニュース記事から、4択ク
 - 解説は記事の内容に基づいて1〜2文で書く
 
 # 出力形式（この JSON オブジェクトのみを出力。quizzes はちょうど {n} 要素）
-{{"quizzes": [{{"question": "問題文", "choices": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"], "answer_index": 0, "explanation": "解説"}}]}}
+{{"quizzes": [{{"article_index": 1, "question": "問題文", "choices": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"], "answer_index": 0, "explanation": "解説"}}]}}
 
 # 記事
 """
@@ -289,13 +290,26 @@ def validate_quiz_set(data, expected_count):
     return validated
 
 
+def _article_index(item, expected_count):
+    """問題の article_index（1 始まり）を検証して返す。不正なら ValueError"""
+    index = item.get('article_index')
+    # bool は int のサブクラスなので明示的に除外する
+    if isinstance(index, bool) or not isinstance(index, int) or not 1 <= index <= expected_count:
+        raise ValueError(f"article_index must be an integer in 1-{expected_count}")
+    return index
+
+
 def _validate_quiz_items(data, expected_count):
     """
-    {"quizzes": [...]} を1問ずつ検証する（一部だけ作り直すため）。
-    問題数が合わない・配列でない場合は、記事との対応が取れないので全体を ValueError にする。
+    {"quizzes": [...]} を1問ずつ検証し、article_index（元の記事の番号）の順に並べ替える（一部だけ作り直すため）。
+    LLM は記事の順番どおりに並べないことがあるため、出力の並び順ではなく article_index で記事と対応付ける。
+
+    - 問題数が合わない・配列でない場合は、全体を ValueError にする
+    - article_index が範囲外・整数でない問題、同じ article_index を持つ問題（どれが正しいか分からないので全部）は
+      検証失敗とし、その記事の問題は作り直す
 
     Returns:
-        (results, errors): results は有効なら dict、不正なら None のリスト（記事と同じ順番）。
+        (results, errors): results は記事と同じ順番で、有効なら dict、問題が無い・不正なら None。
                            errors は不正だった問題の理由のリスト
     """
     quizzes = data.get('quizzes')
@@ -303,15 +317,28 @@ def _validate_quiz_items(data, expected_count):
         raise ValueError("quizzes must be a list")
     if len(quizzes) != expected_count:
         raise ValueError(f"expected {expected_count} quizzes, got {len(quizzes)}")
-    results, errors = [], []
+
+    errors = []
+    by_index = {}  # article_index → [(出力の位置, 検証済みの問題)]
     for i, item in enumerate(quizzes, start=1):
         try:
             if not isinstance(item, dict):
                 raise ValueError("not an object")
-            results.append(validate_quiz(item))
+            index = _article_index(item, expected_count)
+            quiz = validate_quiz(item)
         except ValueError as e:
-            results.append(None)
             errors.append(f"quiz {i}: {e}")
+            continue
+        by_index.setdefault(index, []).append((i, quiz))
+
+    results = [None] * expected_count
+    for index, entries in sorted(by_index.items()):
+        if len(entries) > 1:
+            positions = ', '.join(str(i) for i, _ in entries)
+            errors.append(f"quiz {positions}: duplicate article_index {index}")
+            continue
+        results[index - 1] = entries[0][1]
+    # 有効な問題が無い記事（不正・重複・どの問題にも使われなかった記事）は、呼び出し側で作り直す
     return results, errors
 
 

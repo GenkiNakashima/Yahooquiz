@@ -30,6 +30,13 @@ VALID_QUIZ = {
 
 
 def _quiz_set(*quizzes):
+    """LLM の出力。article_index が無い問題には、並び順どおりの記事番号（1 始まり）を入れる"""
+    items = [{'article_index': i, **q} if isinstance(q, dict) else q for i, q in enumerate(quizzes, start=1)]
+    return json.dumps({'quizzes': items}, ensure_ascii=False)
+
+
+def _raw_quiz_set(*quizzes):
+    """article_index を補わない LLM の出力"""
     return json.dumps({'quizzes': list(quizzes)}, ensure_ascii=False)
 
 
@@ -563,3 +570,95 @@ def test_prompt_forbids_article_numbers_in_questions(env, providers):
     prompt = call[2]['messages'][-1]['content']
     assert '問題文・解説に記事番号や「記事3で」' in prompt
     assert '記事を指す表現を含めない' in prompt
+
+
+
+# ---------------------------------------------------------------------------
+# 問題と記事の対応（article_index）
+# ---------------------------------------------------------------------------
+
+def _indexed(i, article_index=None):
+    return {**_quiz_no(i), 'article_index': article_index if article_index is not None else i}
+
+
+def test_prompt_asks_for_article_index(env, providers):
+    providers.set(GROQ_URL, GPT_OSS, _response(_quiz_set(*[_quiz_no(i) for i in range(1, 6)])))
+
+    llm_client.generate_quizzes(ARTICLES)
+
+    (call,) = providers.calls
+    prompt = call[2]['messages'][-1]['content']
+    assert '"article_index": 1' in prompt
+    assert 'すべての記事番号（1〜5）をちょうど1回ずつ使い' in prompt
+
+
+def test_shuffled_output_is_reordered_by_article_index(env, providers):
+    # 実際に起きた並び: 記事 4, 5, 3, 1, 2 の順に問題が返ってきた
+    order = [4, 5, 3, 1, 2]
+    providers.set(GROQ_URL, GPT_OSS, _response(_raw_quiz_set(*[_indexed(i) for i in order])))
+
+    quizzes = llm_client.generate_quizzes(ARTICLES)
+
+    assert [q['question'] for q in quizzes] == [f'問題{i}' for i in range(1, 6)]
+    assert all('article_index' not in q for q in quizzes)
+    assert len(providers.calls) == 1   # 並べ替えだけで済み、再生成しない
+
+
+def test_duplicate_article_index_is_regenerated(env, providers):
+    # 記事 2 の問題が2つあり（どちらが正しいか分からない）、記事 3 の問題が無い
+    first = _raw_quiz_set(_indexed(1), _indexed(2), _indexed(3, article_index=2), _indexed(4), _indexed(5))
+    providers.set(GROQ_URL, GPT_OSS, _response(first), _response(_quiz_set(_quiz_no(2), _quiz_no(3))))
+
+    quizzes = llm_client.generate_quizzes(ARTICLES)
+
+    assert [q['question'] for q in quizzes] == ['問題1', '問題2', '問題3', '問題4', '問題5']
+    _, retry = providers.calls_to(GROQ_URL, GPT_OSS)
+    # 重複した記事 2 と、問題の無かった記事 3 だけを作り直す
+    assert _prompt_articles(retry) == [ARTICLES[1], ARTICLES[2]]
+
+
+@pytest.mark.parametrize('bad_index', [0, 6, -1, '3', 2.0, True, None], ids=str)
+def test_invalid_article_index_is_regenerated(env, providers, bad_index):
+    items = [_indexed(1), _indexed(2), _indexed(3), _indexed(4), _indexed(5)]
+    if bad_index is None:
+        del items[2]['article_index']
+    else:
+        items[2]['article_index'] = bad_index
+    providers.set(GROQ_URL, GPT_OSS, _response(_raw_quiz_set(*items)), _response(_quiz_set(_quiz_no(3))))
+
+    quizzes = llm_client.generate_quizzes(ARTICLES)
+
+    assert [q['question'] for q in quizzes] == [f'問題{i}' for i in range(1, 6)]
+    _, retry = providers.calls_to(GROQ_URL, GPT_OSS)
+    assert _prompt_articles(retry) == [ARTICLES[2]]
+
+
+def test_regeneration_maps_article_index_back_to_original_articles(env, providers):
+    # 記事 2 と 4 の問題が不正 → 再生成のプロンプトでは「記事1 = 元の記事2」「記事2 = 元の記事4」になる。
+    # 再生成の出力も順番が入れ替わっていて、article_index で元の記事に戻せること
+    first = _quiz_set(_quiz_no(1), BROKEN, _quiz_no(3), BROKEN, _quiz_no(5))
+    retry = _raw_quiz_set({**_quiz_no(4), 'article_index': 2}, {**_quiz_no(2), 'article_index': 1})
+    providers.set(GROQ_URL, GPT_OSS, _response(first), _response(retry))
+
+    quizzes = llm_client.generate_quizzes(ARTICLES)
+
+    assert [q['question'] for q in quizzes] == [f'問題{i}' for i in range(1, 6)]
+    _, retry_call = providers.calls_to(GROQ_URL, GPT_OSS)
+    prompt = retry_call[2]['messages'][-1]['content']
+    assert f'## 記事1\n{ARTICLES[1]}' in prompt and f'## 記事2\n{ARTICLES[3]}' in prompt
+
+
+def test_article_index_failures_on_next_candidate_keep_mapping(env, providers):
+    # 1つ目の候補で記事 5 だけ再生成にも失敗 → 次の候補には記事 5 だけを送る
+    providers.set(
+        GROQ_URL, GPT_OSS,
+        _response(_raw_quiz_set(*[_indexed(i) for i in (2, 1, 4, 3)], _indexed(5, article_index=9))),
+        _response(_raw_quiz_set(_indexed(5, article_index=7))),
+    )
+    providers.set(GROQ_URL, GPT_OSS_20B, _response(_quiz_set(_quiz_no(5))))
+
+    quizzes = llm_client.generate_quizzes(ARTICLES)
+
+    assert [q['question'] for q in quizzes] == [f'問題{i}' for i in range(1, 6)]
+    (fallback,) = providers.calls_to(GROQ_URL, GPT_OSS_20B)
+    assert _prompt_articles(fallback) == [ARTICLES[4]]

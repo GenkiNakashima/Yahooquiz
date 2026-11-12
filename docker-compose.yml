@@ -1,12 +1,26 @@
 services:
+  # Firestore エミュレーター（ローカルでは本番の Firestore に接続しない）。データはコンテナを止めると消える
+  firestore:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: gcloud emulators firestore start --host-port=0.0.0.0:8085
+    # ホストには公開しない（手元で別のエミュレーターを 8085 で動かしていても衝突しない）。アプリからは firestore:8085 で接続する
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8085/"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
   app:
     build: .
     ports:
       - "8080:8080"
+    depends_on:
+      firestore:
+        condition: service_healthy
     environment:
-      # Firestore（Application Default Credentials で認証）
-      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:?GOOGLE_CLOUD_PROJECT を .env.docker に設定してください}
-      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/adc.json
+      # Firestore はエミュレーターを使う（"demo-" で始まるプロジェクト ID は実在するプロジェクトに対応しない）
+      - FIRESTORE_EMULATOR_HOST=firestore:8085
+      - GOOGLE_CLOUD_PROJECT=demo-yahooquiz
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - GROQ_BASE_URL=${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
       - GROQ_MODELS=${GROQ_MODELS:-openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b}
@@ -19,6 +33,3 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - SECRET_KEY=${SECRET_KEY}
       - PORT=8080
-    volumes:
-      # 手元の認証情報（gcloud auth application-default login で作成）を読み取り専用でマウント
-      - ${GOOGLE_ADC_FILE:-~/.config/gcloud/application_default_credentials.json}:/secrets/adc.json:ro

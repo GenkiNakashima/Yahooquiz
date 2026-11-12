@@ -138,10 +138,10 @@ yahooquiz/
 ## セットアップ
 
 ### 前提条件
-- Docker
-- Google Cloud SDK (gcloud)
-- Firebase CLI
-- Firestore（Native モード）が有効な Firebase / GCP プロジェクト
+- Python 3.13
+- Google Cloud SDK (gcloud) と Firestore エミュレーター（ローカル開発・テスト用。**Java 21 が必要**）
+- Docker（Docker で動かす場合）
+- Firestore（Native モード）が有効な Firebase / GCP プロジェクト（本番用）
 
 ### 環境変数設定
 
@@ -156,20 +156,15 @@ cp .env.example .env
 - `SECRET_KEY`: Flask セッション用シークレットキー（未設定だと起動時にエラー。`python -c "import secrets; print(secrets.token_hex(32))"` で生成）
 - LLM 設定（下記）: Groq と OpenRouter の**少なくとも一方**（両方を推奨）
 
-#### Firestore の認証
+#### Firestore の接続先
 
-データベースは Cloud Firestore です。`firebase_admin.initialize_app()` を引数なしで呼んでいるため、
-認証には Application Default Credentials（ADC）を使います。マイグレーションはありません
-（コレクションは最初の書き込み時に作られ、`icons` は起動時に空ならデフォルトの6種を投入します）。
+データベースは Cloud Firestore です（コレクションは最初の書き込み時に作られ、`icons` は起動時に空ならデフォルトの6種を投入します）。
 
-- **Cloud Run 上**: サービスアカウントで自動的に認証されるため、設定は不要です（Firestore の読み書き権限が必要）。
-- **ローカル**: 次のどちらかを行います。認証できない場合もアプリは起動しますが、DB を使う機能は動きません（ログに警告が出ます）。
-  ```bash
-  gcloud auth application-default login
-  # または
-  export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-  ```
-  プロジェクトを自動判定できない場合は `GOOGLE_CLOUD_PROJECT` も指定してください。
+- **本番（Cloud Run 上）**: サービスアカウントで本番の Firestore に接続します（Firestore の読み書き権限が必要）。
+  本番かどうかは、Cloud Run がすべてのコンテナに自動で設定する環境変数 `K_SERVICE` の有無で判別します。
+- **本番以外（ローカル開発・Docker・テスト）**: 必ず **Firestore エミュレーター**に接続します。
+  `FIRESTORE_EMULATOR_HOST` が未設定、またはエミュレーターに接続できない場合、アプリは起動時にエラーで止まります
+  （手元の認証情報で本番のデータを読み書きしてしまう事故を防ぐため）。ローカルでは `K_SERVICE` を設定しないでください。
 
 #### LLM（クイズ生成）の設定
 
@@ -214,12 +209,21 @@ Groq のレート制限はモデルごとなので、1つ目のモデルが 429 
 pip install -r requirements.txt
 ```
 
-2. Firestore の認証情報を用意（上記「Firestore の認証」を参照）
+2. Firestore エミュレーターを起動（別のターミナルで。**Java 21 が必要**です）
 ```bash
-gcloud auth application-default login
+java -version                                        # 21 以上であることを確認
+gcloud components install cloud-firestore-emulator   # 最初に1回だけ
+gcloud emulators firestore start --host-port=localhost:8085
+```
+エミュレーターのデータはメモリ上にだけあり、止めると消えます（アプリの起動時に `icons` が自動で投入されます）。
+
+3. `.env` に次の2行があることを確認（`.env.example` に記載済み）
+```bash
+FIRESTORE_EMULATOR_HOST=localhost:8085
+GOOGLE_CLOUD_PROJECT=demo-yahooquiz
 ```
 
-3. アプリケーション起動
+4. アプリケーション起動
 ```bash
 python app.py
 ```
@@ -253,21 +257,18 @@ Firestore エミュレータを使う結合テストは、`FIRESTORE_EMULATOR_HO
 - `tests/test_points_transactions.py`: ポイントを動かす処理（対戦結果の登録・アイコン購入）のトランザクション。
   並列リクエストでも残高のマイナス・二重購入・限定数の超過・ポイントと履歴の不一致が起きないことを確認します
 ```bash
-firebase emulators:start --only firestore   # 別のターミナルで起動
-FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 pytest
+gcloud emulators firestore start --host-port=localhost:8085   # 別のターミナルで起動（「ローカル開発」を参照）
+FIRESTORE_EMULATOR_HOST=localhost:8085 pytest
 ```
+テストはエミュレーターのデータをテストごとに全削除します。アプリの開発で使っているデータがある場合は、別のエミュレーター（別のポート）を使ってください。
 
 ### Dockerでの実行
 
-Docker Compose での起動手順や、コンテナに認証情報を渡す方法は [DOCKER.md](DOCKER.md) を参照してください。
+Docker Compose では、Firestore エミュレーターもコンテナとして一緒に起動します。手順は [DOCKER.md](DOCKER.md) を参照してください。
 
 ```bash
-docker build -t yahooquiz .
-docker run -p 8080:8080 \
-  --env-file .env \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/secrets/adc.json \
-  -v ~/.config/gcloud/application_default_credentials.json:/secrets/adc.json:ro \
-  yahooquiz
+cp .env.docker.example .env.docker   # SECRET_KEY / JWT_SECRET_KEY / GROQ_API_KEY などを設定
+docker-compose --env-file .env.docker up --build
 ```
 
 ## デプロイ

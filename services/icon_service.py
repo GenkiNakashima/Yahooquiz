@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 from db import get_db
 from firebase_admin import firestore as fs
+from google.api_core import exceptions as gexc
 import logging
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,22 @@ def get_available_icons():
         logger.error(f"Error getting icons: {e}")
         return []
 
+def user_icon_doc_id(user_id, icon_id):
+    """user_icons のドキュメント ID。ユーザーとアイコンの組で1つに決まるため、同じアイコンを2つ持つことはない"""
+    return f'{user_id}_{icon_id}'
+
+
+PURCHASE_CONFLICT_ERROR = 'The purchase conflicted with another request. Please try again.'
+
+
+def _is_contention(e):
+    """
+    同時アクセスによる競合か。読み取り時のロック待ちの打ち切りは Aborted がそのまま、
+    コミットの再試行を max_attempts 回使い切った場合は Aborted を原因とする ValueError が送出される。
+    """
+    return isinstance(e, gexc.Aborted) or (isinstance(e, ValueError) and isinstance(e.__cause__, gexc.Aborted))
+
+
 class _PurchaseRejected(Exception):
     """購入できない（残高不足・所持済み・売り切れなど）。トランザクションを中断し、書き込みは行わない"""
 
@@ -65,13 +82,20 @@ def purchase_icon(user_id, icon_id):
     Purchase an icon with points.
     残高チェック → ポイント消費 → user_icons 登録 → ポイント履歴の記録 を1つのトランザクションで行う。
     Returns: (success, data_or_error)
+        失敗時の data_or_error に 'conflict': True が含まれる場合は、同時アクセスによる競合（再試行すれば成功しうる）
     """
     try:
         db = get_db()
         return True, _purchase_in_transaction(db.transaction(max_attempts=TRANSACTION_MAX_ATTEMPTS), db, user_id, icon_id)
     except _PurchaseRejected as e:
         return False, e.payload
+    except gexc.AlreadyExists:
+        # 同じユーザーが同じアイコンを同時に購入し、user_icons の作成が衝突した（通常は読み取りの段階で弾かれる）
+        return False, {'error': 'You already own this icon'}
     except Exception as e:
+        if _is_contention(e):
+            logger.warning(f"Icon purchase conflicted: {type(e).__name__}: {e}")
+            return False, {'error': PURCHASE_CONFLICT_ERROR, 'conflict': True}
         logger.error(f"Error purchasing icon: {e}")
         return False, {'error': 'Failed to purchase icon'}
 
@@ -82,10 +106,15 @@ def _purchase_in_transaction(transaction, db, user_id, icon_id):
     同じユーザーの購入どうしは users ドキュメント、同じ限定アイコンの購入どうしは icons ドキュメントへの
     書き込みで競合するため、Firestore がトランザクションを直列化（再試行）する。これにより、同時に購入
     されても二重購入・残高のマイナス・限定数の超過は起きない。
+
+    トランザクション内ではクエリを使わず、ID を指定したドキュメントの読み書きだけを行う。クエリがどの範囲を
+    ロックするかは公式には明記されておらず、エミュレーターではコレクション全体への挿入と競合するため
+    （別ユーザーの購入どうしでも再試行が起きる）、ロックの粒度に依存しない形にしている。
     Firestore のトランザクションでは、読み取りをすべて書き込みより先に行う必要がある。
     """
     user_ref = db.collection('users').document(user_id)
     icon_ref = db.collection('icons').document(icon_id)
+    owned_ref = db.collection('user_icons').document(user_icon_doc_id(user_id, icon_id))
 
     user_doc = user_ref.get(transaction=transaction)
     if not user_doc.exists:
@@ -97,22 +126,15 @@ def _purchase_in_transaction(transaction, db, user_id, icon_id):
         raise _PurchaseRejected({'error': 'Icon not found'})
     icon = icon_doc.to_dict()
 
-    # Check if user already owns this icon
-    # トランザクション内のクエリは検索に使ったインデックスの範囲をロックするため、icon_id でも絞り込むと
-    # 同じアイコンを買う他のユーザーの購入とも競合してしまう。自分の所持アイコンだけを読み、照合はここで行う。
-    owned_icon_ids = {
-        doc.to_dict().get('icon_id')
-        for doc in transaction.get(db.collection('user_icons').where('user_id', '==', user_id))
-    }
-    if icon_id in owned_icon_ids:
+    # Check if user already owns this icon（ユーザーとアイコンの組で ID が決まるので、1件読むだけでよい）
+    if owned_ref.get(transaction=transaction).exists:
         raise _PurchaseRejected({'error': 'You already own this icon'})
 
     # Check if limited icon is still available
+    # 販売数は icons/{icon_id}.purchased_count で管理する（既存データは scripts/migrate_user_icons.py で設定済みにする）
     is_limited = bool(icon.get('is_limited') and icon.get('total_supply'))
     if is_limited:
-        purchased_count = len(list(transaction.get(
-            db.collection('user_icons').where('icon_id', '==', icon_id)
-        )))
+        purchased_count = icon.get('purchased_count', 0)
         if purchased_count >= icon['total_supply']:
             raise _PurchaseRejected({'error': 'This limited icon is sold out'})
 
@@ -143,8 +165,8 @@ def _purchase_in_transaction(transaction, db, user_id, icon_id):
         'created_at': now
     })
 
-    # Add icon to user's collection
-    transaction.set(db.collection('user_icons').document(str(uuid.uuid4())), {
+    # Add icon to user's collection（既に存在する場合はコミットが AlreadyExists で失敗する）
+    transaction.create(owned_ref, {
         'user_id': user_id,
         'icon_id': icon_id,
         'acquired_at': now

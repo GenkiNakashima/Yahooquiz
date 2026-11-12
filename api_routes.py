@@ -172,8 +172,8 @@ def api_purchase_icon(icon_id):
 
     if success:
         return jsonify(result), 200
-    else:
-        return jsonify(result), 400
+    # 同時アクセスによる競合は、リクエストの内容ではなくタイミングの問題なので 409（再試行すれば成功しうる）
+    return jsonify(result), 409 if result.get('conflict') else 400
 
 # ============================================================================
 # Leaderboard Routes

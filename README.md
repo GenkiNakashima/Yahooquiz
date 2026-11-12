@@ -322,10 +322,11 @@ done
 
 5. Cloud Buildでビルド・デプロイ
 ```bash
-gcloud builds submit --config cloudbuild.yaml \
-  --substitutions='^@^_OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free'
+gcloud builds submit --config cloudbuild.yaml --project "$PROJECT_ID" \
+  --substitutions="^@^COMMIT_SHA=$(git rev-parse HEAD)@_OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free"
 ```
 `OPENROUTER_MODELS` の値にカンマを含むため、`^@^` で区切り文字を `@` に変更しています。
+`COMMIT_SHA` はトリガーから起動したビルドでのみ自動で設定され、`gcloud builds submit` では空になるため、イメージのタグとして明示的に渡しています（空のままだとイメージ名が不正になりビルドが失敗します）。
 Base URL・`GROQ_MODELS`・タイムアウト・参照するシークレット（`_SECRETS`）は `cloudbuild.yaml` の `substitutions` に既定値があり、同じ方法で上書きできます。
 デプロイでは環境変数を `--set-env-vars` で丸ごと置き換えるため、以前のリビジョンに平文で設定されていた `GROQ_API_KEY` などは削除されます。デプロイ後、平文のキーが残っていないことを確認できます。
 ```bash

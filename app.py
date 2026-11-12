@@ -74,7 +74,7 @@ seed_icons_if_empty()
 llm_providers = llm_client.configured_providers()
 if not llm_providers:
     raise ValueError(
-        "LLM が設定されていません。CEREBRAS_API_KEY（+ CEREBRAS_BASE_URL / CEREBRAS_MODEL）または "
+        "LLM が設定されていません。GROQ_API_KEY（+ 任意で GROQ_BASE_URL / GROQ_MODELS）または "
         "OPENROUTER_API_KEY（+ OPENROUTER_BASE_URL / OPENROUTER_MODELS）を設定してください"
     )
 logger.info(f"利用する LLM プロバイダ（優先順）: {', '.join(llm_providers)}")

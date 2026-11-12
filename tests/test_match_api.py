@@ -15,9 +15,9 @@ USER_ID = '11111111-1111-1111-1111-111111111111'
 @pytest.fixture(scope='module')
 def app_module():
     mp = pytest.MonkeyPatch()
-    mp.setenv('CEREBRAS_API_KEY', 'test-key')
-    mp.setenv('CEREBRAS_BASE_URL', 'https://cerebras.test/v1')
-    mp.setenv('CEREBRAS_MODEL', 'test-model')
+    mp.setenv('GROQ_API_KEY', 'test-key')
+    mp.setenv('GROQ_BASE_URL', 'https://groq.test/openai/v1')
+    mp.setenv('GROQ_MODELS', 'test-model')
     module = importlib.import_module('app')
     module.app.config['TESTING'] = True
     yield module

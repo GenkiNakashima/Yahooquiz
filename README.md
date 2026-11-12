@@ -5,7 +5,7 @@ AIとクイズで対戦するWebアプリケーション（認証・ポイント
 ## 機能
 
 ### クイズ機能
-- LLM（Cerebras、失敗時は OpenRouter の無料モデルにフォールバック）を使用したニュース記事からの自動クイズ生成
+- LLM（Groq の gpt-oss-120b → gpt-oss-20b → Qwen 3.8 27B、失敗時は OpenRouter の無料モデルにフォールバック）を使用したニュース記事からの自動クイズ生成
 - 1ゲーム分（5問）の問題をゲーム開始時に1回の LLM 呼び出しでまとめて生成し、Firestore に保存
 - AI対戦相手との早押しクイズバトル
 - 3段階の難易度（強い・普通・弱い）
@@ -34,7 +34,7 @@ AIとクイズで対戦するWebアプリケーション（認証・ポイント
 - **Container**: Docker
 - **Deployment**: Google Cloud Run
 - **Hosting**: Firebase Hosting (静的ファイル)
-- **AI**: Cerebras（メイン）/ OpenRouter 無料モデル（フォールバック）— いずれも OpenAI 互換 API を `openai` SDK で呼び出し
+- **AI**: Groq（メイン・2モデル）/ OpenRouter 無料モデル（フォールバック）— いずれも OpenAI 互換 API を `openai` SDK で呼び出し
 
 ## プロジェクト構造
 
@@ -44,7 +44,7 @@ yahooquiz/
 ├── api_routes.py          # REST APIエンドポイント
 ├── db.py                  # データベース接続管理
 ├── honban.py              # クイズ生成ロジック（記事取得・AI対戦シミュレーション）
-├── llm_client.py          # LLM 呼び出し（Cerebras → OpenRouter フォールバック、出力検証）
+├── llm_client.py          # LLM 呼び出し（Groq 2モデル → OpenRouter フォールバック、出力検証・一部再生成）
 ├── services/              # ビジネスロジック
 │   ├── auth.py           # 認証サービス
 │   ├── user_service.py   # ユーザー管理
@@ -154,7 +154,7 @@ cp .env.example .env
 必須の環境変数:
 - `JWT_SECRET_KEY`: JWT署名用シークレットキー
 - `SECRET_KEY`: Flask セッション用シークレットキー
-- LLM 設定（下記）: Cerebras と OpenRouter の**少なくとも一方**（両方を推奨）
+- LLM 設定（下記）: Groq と OpenRouter の**少なくとも一方**（両方を推奨）
 
 #### Firestore の認証
 
@@ -173,14 +173,14 @@ cp .env.example .env
 
 #### LLM（クイズ生成）の設定
 
-クイズはまず Cerebras で生成し、失敗した場合は OpenRouter の無料モデルにフォールバックします。
-プロバイダ・モデル名はすべて環境変数で指定します（コードには書かれていません）。
+クイズは Groq の `GROQ_MODELS` を先頭から順に試し、すべて失敗した場合は OpenRouter の無料モデルにフォールバックします。
+Groq のレート制限はモデルごとなので、1つ目のモデルが 429 でも次のモデルは使えます。
 
 | 変数 | 説明 | 例 |
 |------|------|----|
-| `CEREBRAS_API_KEY` | Cerebras の API キー | |
-| `CEREBRAS_BASE_URL` | Cerebras の API エンドポイント | `https://api.cerebras.ai/v1` |
-| `CEREBRAS_MODEL` | 使用するモデル | `qwen-3.8-27b` |
+| `GROQ_API_KEY` | Groq の API キー | |
+| `GROQ_BASE_URL` | Groq の OpenAI 互換エンドポイント（未設定時は既定値） | `https://api.groq.com/openai/v1` |
+| `GROQ_MODELS` | 使用するモデルをカンマ区切りで優先順に指定（未設定時は既定値） | `openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b` |
 | `OPENROUTER_API_KEY` | OpenRouter の API キー | |
 | `OPENROUTER_BASE_URL` | OpenRouter の API エンドポイント | `https://openrouter.ai/api/v1` |
 | `OPENROUTER_MODELS` | 無料モデル（`:free`）をカンマ区切りで優先順に指定 | |
@@ -188,13 +188,23 @@ cp .env.example .env
 | `LLM_TIMEOUT_SECONDS` | 1リクエストのタイムアウト秒数（既定 30） | `30` |
 
 - API キーが未設定のプロバイダはスキップされます。両方とも未設定の場合、アプリは起動時にエラーになります。
+- `qwen/qwen3.8-27b` は Groq の **Preview モデル**です（予告なく提供終了する可能性があります）。終了した場合は 404 などで次のモデルに自動で切り替わりますが、`GROQ_MODELS` から外してください。
+- 推論（thinking）は最小にしています。gpt-oss（120b / 20b）は `"none"` に非対応のため `reasoning_effort: "low"`、Qwen は `reasoning_effort: "none"` + `reasoning_format: "hidden"` です。
+- Groq 無料枠の TPM（8,000）に収めるため、プロンプトに入れる記事は1件 500 文字（500 文字以内の最後の「。」まで）に切り詰め、`max_tokens` は 2,500 にしています。画面に表示する記事本文は切り詰めません。
+- Qwen 3.8 27B は無料枠に OTPM（出力トークン/分）1,000 の上限があるため、`max_tokens` を 900 にしています（それ以上だと毎回 429 になります）。
+- 出力が `max_tokens` で途中で切れた場合（`finish_reason: "length"`）は、JSON 不正と同じ扱いで次の候補に切り替えます。
+- 5問のうち一部だけ検証に失敗した場合は、その記事だけを同じモデルに1回だけ再送します。それでも失敗した問題は次の候補で生成します。
+- 各 Groq モデルが実際に応答するか（推論テキストが混ざらないか・トークン使用量・finish_reason）は、次のスクリプトで確認できます（モデルごとに1回呼び出します）。
+  ```bash
+  .venv/bin/python scripts/check_groq_models.py
+  ```
 - OpenRouter の無料モデルは予告なく入れ替わるため、定期的に確認して `OPENROUTER_MODELS` を更新してください。
   ```bash
   curl -s https://openrouter.ai/api/v1/models | jq -r '.data[].id' | grep ':free$'
   ```
 - フォールバックの条件: 429（レート制限・待機せず即切り替え）、5xx、タイムアウト、接続エラー、404（モデル提供終了など）、
   その他の 4xx（401/403/400 など。設定ミスの可能性があるため ERROR ログを出力）、出力 JSON のパース・検証失敗。
-- 両方とも失敗した場合は「現在クイズを生成できません」と表示します（HTTP 503）。
+- すべての候補で失敗した場合は「現在クイズを生成できません」と表示します（HTTP 503）。
 - ログには、生成に成功したプロバイダ・モデルとフォールバック理由（ステータスコード等）を出力します。API キーとプロンプト本文は出力しません。
 
 ### ローカル開発
@@ -274,13 +284,44 @@ gcloud config set project YOUR_PROJECT_ID
    - Cloud Run のサービスアカウントに Firestore の読み書き権限（例: `roles/datastore.user`）があること
    - `quiz_sets` の TTL ポリシーを設定済みであること（「クイズデータの保存」を参照）
 
-3. Cloud Buildでビルド・デプロイ
+3. API キーを Secret Manager に登録する（最初に1回だけ）
+
+   API キーは `--substitutions` で渡すと Cloud Build の履歴に平文で残るため、Secret Manager から読み込みます。
+   値はコマンドラインに書かず、`read -rs` で入力してください（画面にも履歴にも残りません）。
+```bash
+PROJECT_ID=YOUR_PROJECT_ID
+gcloud services enable secretmanager.googleapis.com --project "$PROJECT_ID"
+
+# シークレットを作成（コマンド実行後に値を貼り付けて Enter）
+read -rs VALUE && printf '%s' "$VALUE" | gcloud secrets create groq-api-key --project "$PROJECT_ID" --replication-policy=automatic --data-file=- ; unset VALUE
+read -rs VALUE && printf '%s' "$VALUE" | gcloud secrets create openrouter-api-key --project "$PROJECT_ID" --replication-policy=automatic --data-file=- ; unset VALUE
+
+# Cloud Run のサービスアカウントにシークレットの読み取り権限を付与
+# （サービスにサービスアカウントを指定していない場合は、既定の Compute Engine サービスアカウント）
+SA=$(gcloud run services describe yahooquiz --project "$PROJECT_ID" --region asia-northeast1 --format='value(spec.template.spec.serviceAccountName)')
+SA=${SA:-$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')-compute@developer.gserviceaccount.com}
+for secret in groq-api-key openrouter-api-key; do
+  gcloud secrets add-iam-policy-binding "$secret" --project "$PROJECT_ID" \
+    --member="serviceAccount:$SA" --role=roles/secretmanager.secretAccessor
+done
+```
+   値を変更するときは `gcloud secrets versions add <シークレット名> --data-file=-` で新しいバージョンを追加します（`:latest` を参照しているため、次のデプロイから反映されます）。
+
+   OpenRouter を使わない場合は、`openrouter-api-key` を作らずに、デプロイ時に `_SECRETS=GROQ_API_KEY=groq-api-key:latest` を指定してください。
+
+4. Cloud Buildでビルド・デプロイ
 ```bash
 gcloud builds submit --config cloudbuild.yaml \
-  --substitutions='^@^_JWT_SECRET_KEY=your-secret@_CEREBRAS_API_KEY=your-cerebras-key@_OPENROUTER_API_KEY=your-openrouter-key@_OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free'
+  --substitutions='^@^_JWT_SECRET_KEY=your-secret@_OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free'
 ```
 `OPENROUTER_MODELS` の値にカンマを含むため、`^@^` で区切り文字を `@` に変更しています。
-Base URL・Cerebras のモデル名・タイムアウトは `cloudbuild.yaml` の `substitutions` に既定値があり、同じ方法で上書きできます。
+Base URL・`GROQ_MODELS`・タイムアウト・参照するシークレット（`_SECRETS`）は `cloudbuild.yaml` の `substitutions` に既定値があり、同じ方法で上書きできます。
+デプロイでは環境変数を `--set-env-vars` で丸ごと置き換えるため、以前のリビジョンに平文で設定されていた `GROQ_API_KEY` などは削除されます。デプロイ後、平文の API キーが残っていないことを確認できます。
+```bash
+gcloud run services describe yahooquiz --project "$PROJECT_ID" --region asia-northeast1 \
+  --format='yaml(spec.template.spec.containers[0].env)' | grep -B1 -A3 'API_KEY'
+# API_KEY の項目が value: ではなく valueFrom.secretKeyRef になっていれば OK
+```
 
 ### Firebaseへのデプロイ
 

@@ -25,16 +25,25 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      # 機密でない値だけを環境変数で渡す。--set-env-vars は既存の環境変数をすべて削除してから設定するため、
+      # 以前のリビジョンに平文で設定されていた API キー（GROQ_API_KEY など）はここで消える
       - '--set-env-vars'
-      # OPENROUTER_MODELS はカンマ区切りのため、^@^ で区切り文字を @ に変更している
-      - '^@^JWT_SECRET_KEY=${_JWT_SECRET_KEY}@CEREBRAS_API_KEY=${_CEREBRAS_API_KEY}@CEREBRAS_BASE_URL=${_CEREBRAS_BASE_URL}@CEREBRAS_MODEL=${_CEREBRAS_MODEL}@OPENROUTER_API_KEY=${_OPENROUTER_API_KEY}@OPENROUTER_BASE_URL=${_OPENROUTER_BASE_URL}@OPENROUTER_MODELS=${_OPENROUTER_MODELS}@LLM_TIMEOUT_SECONDS=${_LLM_TIMEOUT_SECONDS}'
+      # GROQ_MODELS / OPENROUTER_MODELS はカンマ区切りのため、^@^ で区切り文字を @ に変更している
+      - '^@^JWT_SECRET_KEY=${_JWT_SECRET_KEY}@GROQ_BASE_URL=${_GROQ_BASE_URL}@GROQ_MODELS=${_GROQ_MODELS}@OPENROUTER_BASE_URL=${_OPENROUTER_BASE_URL}@OPENROUTER_MODELS=${_OPENROUTER_MODELS}@LLM_TIMEOUT_SECONDS=${_LLM_TIMEOUT_SECONDS}'
+      # API キーは Secret Manager から読み込む（ビルド履歴に値が残らない）。
+      # 事前にシークレットの作成と、Cloud Run のサービスアカウントへの secretAccessor 付与が必要（README 参照）
+      - '--set-secrets'
+      - '${_SECRETS}'
 
 # 既定値（gcloud builds submit --substitutions=... で上書き可能）
 substitutions:
-  _CEREBRAS_BASE_URL: 'https://api.cerebras.ai/v1'
-  _CEREBRAS_MODEL: 'qwen-3.8-27b'
+  _GROQ_BASE_URL: 'https://api.groq.com/openai/v1'
+  _GROQ_MODELS: 'openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b'
   _OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1'
+  _OPENROUTER_MODELS: ''
   _LLM_TIMEOUT_SECONDS: '30'
+  # 環境変数名=シークレット名:バージョン（カンマ区切り）
+  _SECRETS: 'GROQ_API_KEY=groq-api-key:latest,OPENROUTER_API_KEY=openrouter-api-key:latest'
 
 images:
   - 'gcr.io/$PROJECT_ID/yahooquiz:$COMMIT_SHA'

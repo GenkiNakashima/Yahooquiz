@@ -2,10 +2,15 @@
 """
 クイズ生成用の LLM 呼び出しを一か所にまとめたモジュール。
 
-- メイン: Cerebras（OpenAI 互換 API）
-- フォールバック: OpenRouter の無料モデル（`models` 配列で OpenRouter 側の自動フォールバックを利用）
+候補を次の優先順で試す（どれも OpenAI 互換 API を openai SDK で呼ぶ）:
+  1. Groq の GROQ_MODELS（既定: openai/gpt-oss-120b → openai/gpt-oss-20b → qwen/qwen3.8-27b）。
+     Groq のレート制限はモデルごとなので、1つ目が 429 でも次のモデルは使える
+  2. OpenRouter の無料モデル（`models` 配列で OpenRouter 側の自動フォールバックを利用）
 
-呼び出し側は generate_quizzes() だけを使う（1ゲーム分の問題を1回の呼び出しで生成する）。プロバイダ・モデル名はすべて環境変数で指定する。
+1問だけ検証に失敗した場合は、その記事だけを同じ候補に1回だけ再送する
+（無料枠の消費を抑えるため）。それでも失敗した問題は次の候補に回す。
+
+呼び出し側は generate_quizzes() だけを使う（1ゲーム分の問題を1回の呼び出しで生成する）。
 """
 import json
 import logging
@@ -16,9 +21,31 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-# 大きすぎるとレート制限のクォータ計算で不利になるため、必要十分な値にとどめる
-MAX_TOKENS = 4000
+# Groq 無料枠の TPM（8,000）に収めるため、入力（記事5件で約2,500トークン）+ max_tokens を 7,000 以下にする
+MAX_TOKENS = 2500
+# プロンプトに入れる記事1件あたりの最大文字数（画面に表示する記事本文は切り詰めない）
+ARTICLE_MAX_CHARS = 500
 DEFAULT_TIMEOUT_SECONDS = 30.0
+DEFAULT_GROQ_BASE_URL = 'https://api.groq.com/openai/v1'
+DEFAULT_GROQ_MODELS = 'openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b'
+# 同じ候補で、検証に失敗した問題だけを作り直す回数
+MAX_REGENERATIONS_PER_CANDIDATE = 1
+
+# Groq のモデルごとの推論パラメータ（https://console.groq.com/docs/reasoning）。
+# scripts/check_groq_models.py で実際に呼び出し、content に推論が混ざらないことを確認する
+GROQ_REASONING_PARAMS = [
+    # Qwen 3.8 27B: "none" で推論を無効化し、"hidden" で最終回答だけを返させる
+    ('qwen/qwen3.8', {'reasoning_effort': 'none', 'reasoning_format': 'hidden'}),
+    # gpt-oss（120b / 20b）は "none" に非対応のため最小の "low" にする
+    ('openai/gpt-oss', {'reasoning_effort': 'low'}),
+]
+
+# モデルごとの max_tokens（未指定のモデルは MAX_TOKENS）。
+# Qwen 3.8 27B は無料枠に OTPM（出力トークン/分）1,000 の上限があり、max_tokens がそれを超えると
+# 毎回 429（Request too large）になるため、上限より小さくする
+GROQ_MAX_TOKENS = [
+    ('qwen/qwen3.8', 900),
+]
 
 SYSTEM_PROMPT = (
     "あなたは日本語の時事クイズ作成者です。"
@@ -31,9 +58,11 @@ USER_PROMPT_TEMPLATE = """以下の {n} 件のニュース記事から、4択ク
 - 1問目は記事1、2問目は記事2…のように、各問題は対応する記事の内容から作り、記事の順番どおりに並べる
 - 同じ内容の記事が複数ある場合も、問題同士は重複させない
 - 問題文は記事を読めば答えられる内容にする
+- 問題文・解説に記事番号や「記事3で」「この記事では」のような記事を指す表現を含めない（プレイヤーには1問につき1記事だけが表示され、記事番号は見えない）
 - 選択肢はちょうど4つ。正解は1つだけで、選択肢同士は重複させない
 - 選択肢はボタンに表示するため、それぞれ短い単語・語句にする（目安：15文字以内。記号や補足説明を含めない）
 - 不正解の選択肢も正解と同じ種類の語句にする（人名なら人名、数値なら数値）
+- 数値の選択肢は等間隔にせず、ばらつきを持たせる（例: 10・20・30・40 のような並びにしない）
 - answer_index は正解の選択肢の位置（0〜3）
 - 解説は記事の内容に基づいて1〜2文で書く
 
@@ -44,11 +73,27 @@ USER_PROMPT_TEMPLATE = """以下の {n} 件のニュース記事から、4択ク
 """
 
 
+def truncate_article(text, max_chars=ARTICLE_MAX_CHARS):
+    """max_chars 以内で最後の「。」まで残す（文の途中で切らない）。「。」がなければ max_chars で切る"""
+    if len(text) <= max_chars:
+        return text
+    head = text[:max_chars]
+    end = head.rfind('。')
+    return head[:end + 1] if end >= 0 else head
+
+
 def build_user_prompt(article_texts):
     articles = '\n\n'.join(
-        f"## 記事{i}\n{text}" for i, text in enumerate(article_texts, start=1)
+        f"## 記事{i}\n{truncate_article(text)}" for i, text in enumerate(article_texts, start=1)
     )
     return USER_PROMPT_TEMPLATE.format(n=len(article_texts)) + articles
+
+
+def build_messages(article_texts):
+    return [
+        {'role': 'system', 'content': SYSTEM_PROMPT},
+        {'role': 'user', 'content': build_user_prompt(article_texts)},
+    ]
 
 
 class QuizGenerationError(Exception):
@@ -56,7 +101,7 @@ class QuizGenerationError(Exception):
 
 
 class _ProviderFailure(Exception):
-    """1プロバイダの失敗。フォールバックの判断とログ用に理由を持つ"""
+    """1候補の失敗。フォールバックの判断とログ用に理由を持つ"""
 
     def __init__(self, reason, log_level=logging.WARNING):
         super().__init__(reason)
@@ -73,6 +118,10 @@ def _env(name):
     return value or None
 
 
+def _split_models(value):
+    return [m.strip() for m in (value or '').split(',') if m.strip()]
+
+
 def _timeout_seconds():
     raw = _env('LLM_TIMEOUT_SECONDS')
     if raw is None:
@@ -84,51 +133,80 @@ def _timeout_seconds():
         return DEFAULT_TIMEOUT_SECONDS
 
 
-def _cerebras_config():
-    """Cerebras の設定。API キー未設定なら None（＝スキップ）"""
-    api_key = _env('CEREBRAS_API_KEY')
+def groq_reasoning_params(model):
+    for prefix, params in GROQ_REASONING_PARAMS:
+        if model.startswith(prefix):
+            return dict(params)
+    return {}
+
+
+def groq_max_tokens(model):
+    for prefix, max_tokens in GROQ_MAX_TOKENS:
+        if model.startswith(prefix):
+            return max_tokens
+    return MAX_TOKENS
+
+
+def _groq_candidates():
+    """Groq の候補（モデルごとに1つ）。API キー未設定なら空（＝スキップ）"""
+    api_key = _env('GROQ_API_KEY')
     if not api_key:
-        return None
-    missing = [n for n in ('CEREBRAS_BASE_URL', 'CEREBRAS_MODEL') if not _env(n)]
-    if missing:
-        logger.error("Cerebras の設定が不足しています: %s", ', '.join(missing))
-        return None
-    return {
-        'api_key': api_key,
-        'base_url': _env('CEREBRAS_BASE_URL'),
-        'model': _env('CEREBRAS_MODEL'),
-    }
+        return []
+    models = _split_models(_env('GROQ_MODELS') or DEFAULT_GROQ_MODELS)
+    base_url = _env('GROQ_BASE_URL') or DEFAULT_GROQ_BASE_URL
+    return [
+        {
+            'provider': 'groq',
+            'label': f'groq:{model}',
+            'api_key': api_key,
+            'base_url': base_url,
+            'model': model,
+            'extra_body': groq_reasoning_params(model),
+            'max_tokens': groq_max_tokens(model),
+            'temperature': None,
+            'default_headers': None,
+        }
+        for model in models
+    ]
 
 
-def _openrouter_config():
-    """OpenRouter の設定。API キー未設定なら None（＝スキップ）"""
+def _openrouter_candidates():
+    """OpenRouter の候補（models 配列ごと1つ）。API キー未設定なら空（＝スキップ）"""
     api_key = _env('OPENROUTER_API_KEY')
     if not api_key:
-        return None
-    models = [m.strip() for m in (_env('OPENROUTER_MODELS') or '').split(',') if m.strip()]
+        return []
+    models = _split_models(_env('OPENROUTER_MODELS'))
     missing = [n for n in ('OPENROUTER_BASE_URL',) if not _env(n)]
     if not models:
         missing.append('OPENROUTER_MODELS')
     if missing:
         logger.error("OpenRouter の設定が不足しています: %s", ', '.join(missing))
-        return None
-    return {
+        return []
+    return [{
+        'provider': 'openrouter',
+        'label': 'openrouter',
         'api_key': api_key,
         'base_url': _env('OPENROUTER_BASE_URL'),
-        'models': models,
-        'site_url': _env('OPENROUTER_SITE_URL') or 'https://github.com/GenkiNakashima/Yahooquiz',
-        'app_name': _env('OPENROUTER_APP_NAME') or 'Yahooquiz',
-    }
+        'model': models[0],
+        # 複数モデルを渡し、OpenRouter 側の自動フォールバックを利用する
+        'extra_body': {'models': models},
+        'max_tokens': MAX_TOKENS,
+        'temperature': 0.7,
+        'default_headers': {
+            'HTTP-Referer': _env('OPENROUTER_SITE_URL') or 'https://github.com/GenkiNakashima/Yahooquiz',
+            'X-Title': _env('OPENROUTER_APP_NAME') or 'Yahooquiz',
+        },
+    }]
+
+
+def candidates():
+    """優先順の候補一覧"""
+    return _groq_candidates() + _openrouter_candidates()
 
 
 def configured_providers():
-    """利用可能なプロバイダ名の一覧（起動時チェック用）"""
-    providers = []
-    if _cerebras_config():
-        providers.append('cerebras')
-    if _openrouter_config():
-        providers.append('openrouter')
-    return providers
+    """利用可能な候補名の一覧（起動時チェック用）。例: ['groq:qwen/qwen3.8-27b', 'openrouter']"""
+    return [c['label'] for c in candidates()]
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +289,32 @@ def validate_quiz_set(data, expected_count):
     return validated
 
 
+def _validate_quiz_items(data, expected_count):
+    """
+    {"quizzes": [...]} を1問ずつ検証する（一部だけ作り直すため）。
+    問題数が合わない・配列でない場合は、記事との対応が取れないので全体を ValueError にする。
+
+    Returns:
+        (results, errors): results は有効なら dict、不正なら None のリスト（記事と同じ順番）。
+                           errors は不正だった問題の理由のリスト
+    """
+    quizzes = data.get('quizzes')
+    if not isinstance(quizzes, list):
+        raise ValueError("quizzes must be a list")
+    if len(quizzes) != expected_count:
+        raise ValueError(f"expected {expected_count} quizzes, got {len(quizzes)}")
+    results, errors = [], []
+    for i, item in enumerate(quizzes, start=1):
+        try:
+            if not isinstance(item, dict):
+                raise ValueError("not an object")
+            results.append(validate_quiz(item))
+        except ValueError as e:
+            results.append(None)
+            errors.append(f"quiz {i}: {e}")
+    return results, errors
+
+
 # ---------------------------------------------------------------------------
 # プロバイダ呼び出し
 # ---------------------------------------------------------------------------
@@ -237,58 +341,55 @@ def _classify_api_error(e):
     return _ProviderFailure(f"unexpected_error ({type(e).__name__})", log_level=logging.ERROR)
 
 
-def _complete(client, messages, **kwargs):
-    """chat.completions を呼び出し、(本文, 実際に応答したモデル名) を返す"""
-    response = client.chat.completions.create(
-        messages=messages,
-        max_tokens=MAX_TOKENS,
-        temperature=0.7,
-        response_format={'type': 'json_object'},
-        **kwargs,
-    )
-    if not getattr(response, 'choices', None):
-        raise _ProviderFailure("invalid_output (no choices)")
-    return response.choices[0].message.content, getattr(response, 'model', None)
-
-
-def _call_cerebras(config, messages):
+def request_completion(candidate, messages):
+    """1候補に1回だけリクエストし、SDK のレスポンスをそのまま返す（確認スクリプトからも使う）"""
     client = OpenAI(
-        api_key=config['api_key'],
-        base_url=config['base_url'],
+        api_key=candidate['api_key'],
+        base_url=candidate['base_url'],
         timeout=_timeout_seconds(),
         # 429 でも待機せずに即フォールバックするため、SDK の自動リトライは無効にする
         max_retries=0,
+        default_headers=candidate['default_headers'],
     )
-    content, _ = _complete(
-        client,
-        messages,
-        model=config['model'],
-        # このモデルは既定で推論が high になりトークンを浪費するため無効化する
-        extra_body={'reasoning_effort': 'none'},
+    kwargs = {}
+    if candidate['temperature'] is not None:
+        kwargs['temperature'] = candidate['temperature']
+    if candidate['extra_body']:
+        kwargs['extra_body'] = candidate['extra_body']
+    return client.chat.completions.create(
+        model=candidate['model'],
+        messages=messages,
+        max_tokens=candidate['max_tokens'],
+        response_format={'type': 'json_object'},
+        **kwargs,
     )
-    return content, config['model']
 
 
-def _call_openrouter(config, messages):
-    client = OpenAI(
-        api_key=config['api_key'],
-        base_url=config['base_url'],
-        timeout=_timeout_seconds(),
-        max_retries=0,
-        default_headers={
-            'HTTP-Referer': config['site_url'],
-            'X-Title': config['app_name'],
-        },
-    )
-    models = config['models']
-    content, served_model = _complete(
-        client,
-        messages,
-        model=models[0],
-        # 複数モデルを渡し、OpenRouter 側の自動フォールバックを利用する
-        extra_body={'models': models},
-    )
-    return content, served_model or models[0]
+def _generate_with(candidate, article_texts):
+    """
+    1候補で article_texts の問題を生成する。
+
+    Returns:
+        (results, errors, served_model): results は記事と同じ順番で、不正な問題は None
+    Raises:
+        _ProviderFailure: API エラー・JSON 不正・問題数の不一致など、候補ごと諦める場合
+    """
+    try:
+        response = request_completion(candidate, build_messages(article_texts))
+    except Exception as e:
+        raise _classify_api_error(e) from None
+    if not getattr(response, 'choices', None):
+        raise _ProviderFailure("invalid_output (no choices)")
+    choice = response.choices[0]
+    # max_tokens に達して出力が途中で切れた場合は、JSON 不正と同じ扱いで次の候補へ
+    if getattr(choice, 'finish_reason', None) == 'length':
+        raise _ProviderFailure(f"invalid_output (truncated: finish_reason=length, max_tokens={candidate['max_tokens']})")
+    content = choice.message.content
+    try:
+        results, errors = _validate_quiz_items(_parse_json(content), len(article_texts))
+    except ValueError as e:
+        raise _ProviderFailure(f"invalid_output ({e})") from None
+    return results, errors, getattr(response, 'model', None) or candidate['model']
 
 
 # ---------------------------------------------------------------------------
@@ -297,49 +398,71 @@ def _call_openrouter(config, messages):
 
 def generate_quizzes(article_texts):
     """
-    記事本文のリストから、記事ごとに1問ずつ4択クイズを1回の LLM 呼び出しで生成する。
+    記事本文のリストから、記事ごとに1問ずつ4択クイズを生成する（通常は1回の LLM 呼び出し）。
+
+    - 一部の問題だけ検証に失敗した場合は、その記事だけを同じ候補に1回だけ再送する
+    - それでも残った問題（または API エラー等で候補ごと失敗した問題）は次の候補で生成する
+    - 成功した問題は記事の順番どおりにマージする
 
     Returns:
         list[dict]: 記事と同じ順番のクイズ。各要素は
             question, choices(4), answer_index, answer(= choices[answer_index]), explanation
     Raises:
-        QuizGenerationError: すべてのプロバイダで生成できなかった場合
+        QuizGenerationError: すべての候補で生成できなかった場合
     """
     if not article_texts:
         raise ValueError("article_texts must not be empty")
-    expected = len(article_texts)
-    messages = [
-        {'role': 'system', 'content': SYSTEM_PROMPT},
-        {'role': 'user', 'content': build_user_prompt(article_texts)},
-    ]
-
-    providers = [
-        ('cerebras', _cerebras_config(), _call_cerebras),
-        ('openrouter', _openrouter_config(), _call_openrouter),
-    ]
-
+    total = len(article_texts)
+    results = [None] * total
+    pending = list(range(total))  # まだ問題ができていない記事の位置
     failures = []
-    for name, config, call in providers:
-        if config is None:
-            failures.append(f"{name}: not_configured")
-            continue
-        try:
-            content, model = call(config, messages)
-            try:
-                quizzes = validate_quiz_set(_parse_json(content), expected)
-            except ValueError as e:
-                raise _ProviderFailure(f"invalid_output ({e})") from None
-        except Exception as e:
-            f = e if isinstance(e, _ProviderFailure) else _classify_api_error(e)
-            logger.log(f.log_level, "LLM provider=%s failed: %s -> フォールバックします", name, f.reason)
-            failures.append(f"{name}: {f.reason}")
-            continue
-        if failures:
-            logger.info("クイズ生成成功 provider=%s model=%s count=%d (フォールバック理由: %s)",
-                        name, model, expected, '; '.join(failures))
-        else:
-            logger.info("クイズ生成成功 provider=%s model=%s count=%d", name, model, expected)
-        return quizzes
+    succeeded_with = []
 
-    logger.error("すべての LLM プロバイダでクイズ生成に失敗しました: %s", '; '.join(failures))
-    raise QuizGenerationError('; '.join(failures))
+    available = candidates()
+    if not available:
+        failures.append("not_configured")
+
+    for candidate in available:
+        label = candidate['label']
+        regenerations = 0
+        while pending:
+            try:
+                batch, errors, model = _generate_with(candidate, [article_texts[i] for i in pending])
+            except _ProviderFailure as f:
+                logger.log(f.log_level, "LLM provider=%s failed: %s -> 次の候補へフォールバックします", label, f.reason)
+                failures.append(f"{label}: {f.reason}")
+                break
+
+            got = [i for i, quiz in zip(pending, batch) if quiz is not None]
+            for i, quiz in zip(pending, batch):
+                if quiz is not None:
+                    results[i] = quiz
+            if got:
+                succeeded_with.append(f"provider={candidate['provider']} model={model} count={len(got)}")
+            pending = [i for i, quiz in zip(pending, batch) if quiz is None]
+            if not pending:
+                break
+
+            reason = f"invalid_output ({'; '.join(errors)})"
+            # 1問もできなかった場合は、この候補では作れないとみなして次の候補へ
+            if not got or regenerations >= MAX_REGENERATIONS_PER_CANDIDATE:
+                logger.warning("LLM provider=%s: %d 問が不正 %s -> 次の候補へフォールバックします",
+                               label, len(pending), reason)
+                failures.append(f"{label}: {reason}")
+                break
+            regenerations += 1
+            logger.warning("LLM provider=%s: %d 問が不正 %s -> 同じ候補でその問題だけ再生成します",
+                           label, len(pending), reason)
+        if not pending:
+            break
+
+    if pending:
+        logger.error("すべての LLM 候補でクイズ生成に失敗しました: %s", '; '.join(failures))
+        raise QuizGenerationError('; '.join(failures))
+
+    if failures:
+        logger.info("クイズ生成成功 %s (全 %d 問, フォールバックの理由: %s)",
+                    ', '.join(succeeded_with), total, '; '.join(failures))
+    else:
+        logger.info("クイズ生成成功 %s (全 %d 問)", ', '.join(succeeded_with), total)
+    return results

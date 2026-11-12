@@ -152,8 +152,8 @@ cp .env.example .env
 ```
 
 必須の環境変数:
-- `JWT_SECRET_KEY`: JWT署名用シークレットキー
-- `SECRET_KEY`: Flask セッション用シークレットキー
+- `JWT_SECRET_KEY`: JWT署名用シークレットキー（未設定だと起動時にエラー。`SECRET_KEY` とは別の値を同じコマンドで生成）
+- `SECRET_KEY`: Flask セッション用シークレットキー（未設定だと起動時にエラー。`python -c "import secrets; print(secrets.token_hex(32))"` で生成）
 - LLM 設定（下記）: Groq と OpenRouter の**少なくとも一方**（両方を推奨）
 
 #### Firestore の認証
@@ -284,9 +284,9 @@ gcloud config set project YOUR_PROJECT_ID
    - Cloud Run のサービスアカウントに Firestore の読み書き権限（例: `roles/datastore.user`）があること
    - `quiz_sets` の TTL ポリシーを設定済みであること（「クイズデータの保存」を参照）
 
-3. API キーを Secret Manager に登録する（最初に1回だけ）
+3. API キー・`SECRET_KEY`・`JWT_SECRET_KEY` を Secret Manager に登録する（最初に1回だけ）
 
-   API キーは `--substitutions` で渡すと Cloud Build の履歴に平文で残るため、Secret Manager から読み込みます。
+   これらは `--substitutions` で渡すと Cloud Build の履歴に平文で残るため、Secret Manager から読み込みます。
    値はコマンドラインに書かず、`read -rs` で入力してください（画面にも履歴にも残りません）。
 ```bash
 PROJECT_ID=YOUR_PROJECT_ID
@@ -295,32 +295,43 @@ gcloud services enable secretmanager.googleapis.com --project "$PROJECT_ID"
 # シークレットを作成（コマンド実行後に値を貼り付けて Enter）
 read -rs VALUE && printf '%s' "$VALUE" | gcloud secrets create groq-api-key --project "$PROJECT_ID" --replication-policy=automatic --data-file=- ; unset VALUE
 read -rs VALUE && printf '%s' "$VALUE" | gcloud secrets create openrouter-api-key --project "$PROJECT_ID" --replication-policy=automatic --data-file=- ; unset VALUE
+# SECRET_KEY / JWT_SECRET_KEY はランダムに生成して、そのまま登録する（値は表示されない。2つは別の値になる）
+python3 -c "import secrets; print(secrets.token_hex(32), end='')" | gcloud secrets create flask-secret-key --project "$PROJECT_ID" --replication-policy=automatic --data-file=-
+python3 -c "import secrets; print(secrets.token_hex(32), end='')" | gcloud secrets create jwt-secret-key --project "$PROJECT_ID" --replication-policy=automatic --data-file=-
 
 # Cloud Run のサービスアカウントにシークレットの読み取り権限を付与
 # （サービスにサービスアカウントを指定していない場合は、既定の Compute Engine サービスアカウント）
 SA=$(gcloud run services describe yahooquiz --project "$PROJECT_ID" --region asia-northeast1 --format='value(spec.template.spec.serviceAccountName)')
 SA=${SA:-$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')-compute@developer.gserviceaccount.com}
-for secret in groq-api-key openrouter-api-key; do
+for secret in flask-secret-key jwt-secret-key groq-api-key openrouter-api-key; do
   gcloud secrets add-iam-policy-binding "$secret" --project "$PROJECT_ID" \
     --member="serviceAccount:$SA" --role=roles/secretmanager.secretAccessor
 done
 ```
    値を変更するときは `gcloud secrets versions add <シークレット名> --data-file=-` で新しいバージョンを追加します（`:latest` を参照しているため、次のデプロイから反映されます）。
 
-   OpenRouter を使わない場合は、`openrouter-api-key` を作らずに、デプロイ時に `_SECRETS=GROQ_API_KEY=groq-api-key:latest` を指定してください。
+   OpenRouter を使わない場合は、`openrouter-api-key` を作らずに、デプロイ時に `_SECRETS=SECRET_KEY=flask-secret-key:latest,JWT_SECRET_KEY=jwt-secret-key:latest,GROQ_API_KEY=groq-api-key:latest` を指定してください。
 
-4. Cloud Buildでビルド・デプロイ
+4. デプロイ前の注意
+   - **初回デプロイで全ユーザーがログアウトされます。** これまで本番には `SECRET_KEY` も `JWT_SECRET_KEY` も設定されておらず、
+     コード内の固定値で署名していました。新しい鍵に切り替わるため、既存のセッション Cookie も発行済みの JWT（アクセストークン・リフレッシュトークン）も無効になり、
+     全ユーザーが再ログインする必要があります（アカウントやポイントなどのデータは消えません）。
+   - デプロイ前に、上記4つのシークレット（`flask-secret-key` / `jwt-secret-key` / `groq-api-key` / `openrouter-api-key`）の作成と
+     `secretAccessor` の付与が済んでいることを確認してください。足りないとデプロイが失敗します。
+   - 鍵を後から変更（`gcloud secrets versions add`）した場合も、同じく全ユーザーがログアウトされます。
+
+5. Cloud Buildでビルド・デプロイ
 ```bash
 gcloud builds submit --config cloudbuild.yaml \
-  --substitutions='^@^_JWT_SECRET_KEY=your-secret@_OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free'
+  --substitutions='^@^_OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free'
 ```
 `OPENROUTER_MODELS` の値にカンマを含むため、`^@^` で区切り文字を `@` に変更しています。
 Base URL・`GROQ_MODELS`・タイムアウト・参照するシークレット（`_SECRETS`）は `cloudbuild.yaml` の `substitutions` に既定値があり、同じ方法で上書きできます。
-デプロイでは環境変数を `--set-env-vars` で丸ごと置き換えるため、以前のリビジョンに平文で設定されていた `GROQ_API_KEY` などは削除されます。デプロイ後、平文の API キーが残っていないことを確認できます。
+デプロイでは環境変数を `--set-env-vars` で丸ごと置き換えるため、以前のリビジョンに平文で設定されていた `GROQ_API_KEY` などは削除されます。デプロイ後、平文のキーが残っていないことを確認できます。
 ```bash
 gcloud run services describe yahooquiz --project "$PROJECT_ID" --region asia-northeast1 \
-  --format='yaml(spec.template.spec.containers[0].env)' | grep -B1 -A3 'API_KEY'
-# API_KEY の項目が value: ではなく valueFrom.secretKeyRef になっていれば OK
+  --format='yaml(spec.template.spec.containers[0].env)' | grep -B1 -A3 -E 'API_KEY|SECRET_KEY'
+# API_KEY / SECRET_KEY の項目が value: ではなく valueFrom.secretKeyRef になっていれば OK
 ```
 
 ### Firebaseへのデプロイ

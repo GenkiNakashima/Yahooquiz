@@ -25,7 +25,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key')
+# セッション Cookie の署名鍵。既定値にフォールバックすると誰でも Cookie を偽造できるため、未設定なら起動しない
+app.secret_key = os.environ.get('SECRET_KEY', '').strip()
+if not app.secret_key:
+    raise ValueError(
+        "SECRET_KEY が設定されていません。ローカルでは .env に設定してください"
+        "（生成例: python -c \"import secrets; print(secrets.token_hex(32))\"）"
+    )
 
 # Setup CORS
 CORS(app, resources={r"/api/*": {"origins": "*"}})

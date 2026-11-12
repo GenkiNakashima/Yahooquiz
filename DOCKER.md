@@ -90,8 +90,8 @@ Cloud Run 上では、サービスに割り当てたサービスアカウント�
      --platform managed \
      --region asia-northeast1 \
      --allow-unauthenticated \
-     --set-env-vars '^@^JWT_SECRET_KEY=YOUR_SECRET@GROQ_BASE_URL=https://api.groq.com/openai/v1@GROQ_MODELS=openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b@OPENROUTER_BASE_URL=https://openrouter.ai/api/v1@OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free' \
-     --set-secrets 'GROQ_API_KEY=groq-api-key:latest,OPENROUTER_API_KEY=openrouter-api-key:latest'
+     --set-env-vars '^@^GROQ_BASE_URL=https://api.groq.com/openai/v1@GROQ_MODELS=openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b@OPENROUTER_BASE_URL=https://openrouter.ai/api/v1@OPENROUTER_MODELS=YOUR_MODEL_1:free,YOUR_MODEL_2:free' \
+     --set-secrets 'SECRET_KEY=flask-secret-key:latest,JWT_SECRET_KEY=jwt-secret-key:latest,GROQ_API_KEY=groq-api-key:latest,OPENROUTER_API_KEY=openrouter-api-key:latest'
    ```
    ※ `GROQ_MODELS` / `OPENROUTER_MODELS` の値にカンマを含むため、`^@^` で区切り文字を `@` に変更しています。
-   ※ API キーは Secret Manager から読み込みます。シークレットの作成と権限の付与は README の「デプロイ」を参照してください。
+   ※ API キー・`SECRET_KEY`・`JWT_SECRET_KEY` は Secret Manager から読み込みます。シークレットの作成と権限の付与は README の「デプロイ」を参照してください。

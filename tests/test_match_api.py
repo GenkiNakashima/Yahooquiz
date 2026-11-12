@@ -15,6 +15,7 @@ USER_ID = '11111111-1111-1111-1111-111111111111'
 @pytest.fixture(scope='module')
 def app_module():
     mp = pytest.MonkeyPatch()
+    mp.setenv('SECRET_KEY', 'test-secret-key')
     mp.setenv('GROQ_API_KEY', 'test-key')
     mp.setenv('GROQ_BASE_URL', 'https://groq.test/openai/v1')
     mp.setenv('GROQ_MODELS', 'test-model')

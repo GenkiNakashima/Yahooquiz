@@ -3,6 +3,10 @@ import os
 import pytest
 import requests
 
+# services.auth は import 時に JWT_SECRET_KEY を必須とするため、テスト用の値を入れておく
+# （テストモジュールの import より先に conftest が読み込まれる）
+os.environ.setdefault('JWT_SECRET_KEY', 'test-jwt-secret-key')
+
 
 @pytest.fixture
 def firestore_emulator():

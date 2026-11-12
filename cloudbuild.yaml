@@ -29,8 +29,8 @@ steps:
       # 以前のリビジョンに平文で設定されていた API キー（GROQ_API_KEY など）はここで消える
       - '--set-env-vars'
       # GROQ_MODELS / OPENROUTER_MODELS はカンマ区切りのため、^@^ で区切り文字を @ に変更している
-      - '^@^JWT_SECRET_KEY=${_JWT_SECRET_KEY}@GROQ_BASE_URL=${_GROQ_BASE_URL}@GROQ_MODELS=${_GROQ_MODELS}@OPENROUTER_BASE_URL=${_OPENROUTER_BASE_URL}@OPENROUTER_MODELS=${_OPENROUTER_MODELS}@LLM_TIMEOUT_SECONDS=${_LLM_TIMEOUT_SECONDS}'
-      # API キーは Secret Manager から読み込む（ビルド履歴に値が残らない）。
+      - '^@^GROQ_BASE_URL=${_GROQ_BASE_URL}@GROQ_MODELS=${_GROQ_MODELS}@OPENROUTER_BASE_URL=${_OPENROUTER_BASE_URL}@OPENROUTER_MODELS=${_OPENROUTER_MODELS}@LLM_TIMEOUT_SECONDS=${_LLM_TIMEOUT_SECONDS}'
+      # API キー・SECRET_KEY・JWT_SECRET_KEY は Secret Manager から読み込む（ビルド履歴に値が残らない）。
       # 事前にシークレットの作成と、Cloud Run のサービスアカウントへの secretAccessor 付与が必要（README 参照）
       - '--set-secrets'
       - '${_SECRETS}'
@@ -43,7 +43,7 @@ substitutions:
   _OPENROUTER_MODELS: ''
   _LLM_TIMEOUT_SECONDS: '30'
   # 環境変数名=シークレット名:バージョン（カンマ区切り）
-  _SECRETS: 'GROQ_API_KEY=groq-api-key:latest,OPENROUTER_API_KEY=openrouter-api-key:latest'
+  _SECRETS: 'SECRET_KEY=flask-secret-key:latest,JWT_SECRET_KEY=jwt-secret-key:latest,GROQ_API_KEY=groq-api-key:latest,OPENROUTER_API_KEY=openrouter-api-key:latest'
 
 images:
   - 'gcr.io/$PROJECT_ID/yahooquiz:$COMMIT_SHA'

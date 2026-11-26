@@ -19,6 +19,8 @@ import os
 import openai
 from openai import OpenAI
 
+import answer_checker
+
 logger = logging.getLogger(__name__)
 
 # Groq 無料枠の TPM（8,000）に収めるため、入力（記事5件で約2,500トークン）+ max_tokens を 7,000 以下にする
@@ -28,6 +30,8 @@ ARTICLE_MAX_CHARS = 500
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_GROQ_BASE_URL = 'https://api.groq.com/openai/v1'
 DEFAULT_GROQ_MODELS = 'openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b'
+# 確認スクリプト（scripts/check_openrouter_models.py）と同じ既定値
+DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 # 同じ候補で、検証に失敗した問題だけを作り直す回数
 MAX_REGENERATIONS_PER_CANDIDATE = 1
 
@@ -59,6 +63,8 @@ USER_PROMPT_TEMPLATE = """以下の {n} 件のニュース記事から、4択ク
   すべての記事番号（1〜{n}）をちょうど1回ずつ使い、同じ記事番号を2つの問題に使わない
 - 同じ内容の記事が複数ある場合も、問題同士は重複させない
 - 問題文は記事を読めば答えられる内容にする
+- 答えが数値か固有名詞（人名・会社名・地名など）になる問題を3問以上含める
+- 一部の問題は選択肢を表示せずに記述式で出題するため、問題文は選択肢を見なくても答えが1つに決まる書き方にする（「次のうち」「どれ」などを使わない）
 - 問題文・解説に記事番号や「記事3で」「この記事では」のような記事を指す表現を含めない（プレイヤーには1問につき1記事だけが表示され、記事番号は見えない）
 - 選択肢はちょうど4つ。正解は1つだけで、選択肢同士は重複させない
 - 選択肢はボタンに表示するため、それぞれ短い単語・語句にする（目安：15文字以内。記号や補足説明を含めない）
@@ -66,9 +72,13 @@ USER_PROMPT_TEMPLATE = """以下の {n} 件のニュース記事から、4択ク
 - 数値の選択肢は等間隔にせず、ばらつきを持たせる（例: 10・20・30・40 のような並びにしない）
 - answer_index は正解の選択肢の位置（0〜3）
 - 解説は記事の内容に基づいて1〜2文で書く
+- answer_type は正解の種類: "number"（数値）、"name"（人名・会社名・地名などの固有名詞）、"term"（用語）、"other"（それ以外）のいずれか
+- aliases は正解の別表記の配列（0〜3個。無ければ []）。略称・英語名・正式名称など、機械的には変換できない表記だけを入れる
+  （例: 公正取引委員会 → "公取委"、ソフトバンクグループ → "SoftBank Group"。人名なら姓だけの表記も入れてよい）。
+  全角半角・カタカナとひらがな・単位・「株式会社」の有無・敬称や肩書の違いだけの表記は入れない
 
 # 出力形式（この JSON オブジェクトのみを出力。quizzes はちょうど {n} 要素）
-{{"quizzes": [{{"article_index": 1, "question": "問題文", "choices": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"], "answer_index": 0, "explanation": "解説"}}]}}
+{{"quizzes": [{{"article_index": 1, "question": "問題文", "choices": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"], "answer_index": 0, "explanation": "解説", "answer_type": "name", "aliases": ["別表記"]}}]}}
 
 # 記事
 """
@@ -177,17 +187,14 @@ def _openrouter_candidates():
     if not api_key:
         return []
     models = _split_models(_env('OPENROUTER_MODELS'))
-    missing = [n for n in ('OPENROUTER_BASE_URL',) if not _env(n)]
     if not models:
-        missing.append('OPENROUTER_MODELS')
-    if missing:
-        logger.error("OpenRouter の設定が不足しています: %s", ', '.join(missing))
+        logger.error("OpenRouter の設定が不足しています: OPENROUTER_MODELS")
         return []
     return [{
         'provider': 'openrouter',
         'label': 'openrouter',
         'api_key': api_key,
-        'base_url': _env('OPENROUTER_BASE_URL'),
+        'base_url': _env('OPENROUTER_BASE_URL') or DEFAULT_OPENROUTER_BASE_URL,
         'model': models[0],
         # 複数モデルを渡し、OpenRouter 側の自動フォールバックを利用する
         'extra_body': {'models': models},
@@ -259,14 +266,47 @@ def validate_quiz(data):
     if not isinstance(explanation, str) or not explanation.strip():
         raise ValueError("explanation is empty")
 
+    answer = choices[answer_index]
+    # answer_type が不正な場合は問題全体を失敗にせず（再生成のコストをかけず）、記述式の対象外の "other" にする
+    answer_type = data.get('answer_type')
+    answer_type = answer_type.strip().lower() if isinstance(answer_type, str) else None
+    if answer_type not in answer_checker.ANSWER_TYPES:
+        answer_type = 'other'
+
     return {
         'question': question.strip(),
         'choices': choices,
         'answer_index': answer_index,
-        # 既存の画面・判定（自由記述の完全一致）はこの値を使う
-        'answer': choices[answer_index],
+        # 画面の表示と記述式の判定はこの値を使う
+        'answer': answer,
         'explanation': explanation.strip(),
+        'answer_type': answer_type,
+        'aliases': clean_aliases(data.get('aliases'), answer,
+                                 [c for i, c in enumerate(choices) if i != answer_index], answer_type),
     }
+
+
+MAX_ALIASES = 3
+
+
+def clean_aliases(aliases, answer, wrong_choices, answer_type):
+    """
+    aliases（正解の別表記）を検証する。文字列の配列で MAX_ALIASES 個以下でなければ [] にする（問題は失敗にしない）。
+    正解と同じ表記（正規化後）・重複は取り除く。不正解の選択肢と同じ表記になるものは、
+    誤答を正解にしてしまうため取り除く。
+    """
+    if not isinstance(aliases, list) or len(aliases) > MAX_ALIASES or not all(isinstance(a, str) for a in aliases):
+        return []
+    cleaned = []
+    for alias in (a.strip() for a in aliases):
+        if not alias or len(alias) > answer_checker.MAX_INPUT_CHARS:
+            continue
+        if any(answer_checker.answers_match(alias, other, answer_type) for other in [answer, *cleaned]):
+            continue
+        if any(answer_checker.answers_match(alias, wrong, answer_type) for wrong in wrong_choices):
+            continue
+        cleaned.append(alias)
+    return cleaned
 
 
 def validate_quiz_set(data, expected_count):
@@ -433,7 +473,8 @@ def generate_quizzes(article_texts):
 
     Returns:
         list[dict]: 記事と同じ順番のクイズ。各要素は
-            question, choices(4), answer_index, answer(= choices[answer_index]), explanation
+            question, choices(4), answer_index, answer(= choices[answer_index]), explanation,
+            answer_type（number / name / term / other）, aliases（正解の別表記。0〜3個）
     Raises:
         QuizGenerationError: すべての候補で生成できなかった場合
     """

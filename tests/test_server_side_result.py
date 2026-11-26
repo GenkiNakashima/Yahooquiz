@@ -59,6 +59,37 @@ def test_first_answer_of_a_round_wins(db):
     assert second == (PLAYER_WRONG, {'0': PLAYER_WRONG})
 
 
+def test_get_quiz_set_returns_quizzes_and_results(db):
+    quiz_set_id = _game()
+    quiz_set_service.record_answer(quiz_set_id, 0, PLAYER_CORRECT)
+
+    data = quiz_set_service.get_quiz_set(quiz_set_id)
+
+    assert [q['answer'] for q in data['quizzes']] == [f'正解{i}' for i in range(5)]
+    assert data['results'] == {'0': PLAYER_CORRECT}
+    assert quiz_set_service.get_quiz_set(str(uuid.uuid4())) is None
+
+
+def test_get_quiz_set_ignores_expired_sets(db):
+    quiz_set_id = _game()
+    db.collection('quiz_sets').document(quiz_set_id).update(
+        {'expires_at': datetime.now(timezone.utc) - timedelta(seconds=1)})
+
+    assert quiz_set_service.get_quiz_set(quiz_set_id) is None
+
+
+def test_text_answer_is_stored_with_the_first_result_only(db):
+    quiz_set_id = _game()
+
+    quiz_set_service.record_answer(quiz_set_id, 0, PLAYER_WRONG, answer_text='7000億')
+    quiz_set_service.record_answer(quiz_set_id, 0, PLAYER_CORRECT, answer_text='7680億')
+    quiz_set_service.record_answer(quiz_set_id, 1, AI_CORRECT)
+
+    stored = db.collection('quiz_sets').document(quiz_set_id).get().to_dict()
+    assert stored['results'] == {'0': PLAYER_WRONG, '1': AI_CORRECT}
+    assert stored['answers'] == {'0': '7000億'}
+
+
 def test_concurrent_answers_to_the_same_round_keep_one_result(db):
     quiz_set_id = _game()
     barrier = threading.Barrier(4)

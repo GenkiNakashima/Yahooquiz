@@ -7,6 +7,13 @@ import requests
 from bs4 import BeautifulSoup
 
 import llm_client
+from answer_checker import TEXT_ANSWER_TYPES
+
+# 1ゲームで記述式にする問題数（answer_type が number / name の問題から選ぶ。足りなければその数だけ）
+TEXT_QUESTIONS_MIN = 2
+TEXT_QUESTIONS_MAX = 3
+ANSWER_FORMAT_TEXT = 'text'
+ANSWER_FORMAT_CHOICE = 'choice'
 
 GENRE_URLS = {
     'top-picks': 'https://news.yahoo.co.jp/topics/top-picks',
@@ -52,6 +59,23 @@ def _shuffle_choices(quiz):
     quiz['answer'] = correct
 
 
+def assign_answer_formats(quizzes, rng=random):
+    """
+    answer_type が number / name の問題からランダムに2〜3問を記述式（answer_format="text"）にし、
+    残りを4択（"choice"）にする。対象が2問未満のときは、再生成せずにその数だけ記述式にする（コストを増やさないため）。
+    記述式の問題も選択肢は保存しておく（画面には出さない）。
+    """
+    eligible = [i for i, q in enumerate(quizzes)
+                if q.get('answer_type') in TEXT_ANSWER_TYPES and q.get('answer')]
+    count = min(rng.randint(TEXT_QUESTIONS_MIN, TEXT_QUESTIONS_MAX), len(eligible))
+    chosen = set(rng.sample(eligible, count))
+    for i, quiz in enumerate(quizzes):
+        if i in chosen:
+            quiz['answer_format'] = ANSWER_FORMAT_TEXT
+        elif quiz.get('choices'):
+            quiz['answer_format'] = ANSWER_FORMAT_CHOICE
+
+
 class QuizGenerator:
     def __init__(self):
         self.headers = {
@@ -60,6 +84,7 @@ class QuizGenerator:
         self.ai_levels = {
             'strong': {
                 'correct_rate': 0.95,  # 95%の正解率
+                'text_correct_rate': 0.85,  # 記述式の正解率（4択より低くする）
                 'reaction_time': {
                     'min': 6.0,        # 最速6秒
                     'max': 8.0         # 最長8秒
@@ -67,6 +92,7 @@ class QuizGenerator:
             },
             'normal': {
                 'correct_rate': 0.80,  # 80%の正解率
+                'text_correct_rate': 0.60,  # 記述式の正解率（4択より低くする）
                 'reaction_time': {
                     'min': 8.0,
                     'max': 11.0
@@ -74,6 +100,7 @@ class QuizGenerator:
             },
             'weak': {
                 'correct_rate': 0.60,  # 60%の正解率
+                'text_correct_rate': 0.35,  # 記述式の正解率（4択より低くする）
                 'reaction_time': {
                     'min': 10.0,
                     'max': 15.0
@@ -89,9 +116,10 @@ class QuizGenerator:
             level_config['reaction_time']['max']
         )
 
-    def simulate_ai_answer(self, level='normal'):
-        """AIの回答をレベルに応じてシミュレート"""
-        return random.random() < self.ai_levels[level]['correct_rate']
+    def simulate_ai_answer(self, level='normal', answer_format=ANSWER_FORMAT_CHOICE):
+        """AIの回答をレベルと出題形式（記述式は4択より正解率が低い）に応じてシミュレート"""
+        key = 'text_correct_rate' if answer_format == ANSWER_FORMAT_TEXT else 'correct_rate'
+        return random.random() < self.ai_levels[level][key]
 
     def get_ai_thinking_message(self, level='normal'):
         """AIの思考メッセージをレベルに応じて変更"""
@@ -236,4 +264,5 @@ class QuizGenerator:
             quiz['article_content'] = article['content']
             quiz['article_url'] = article['url']
             quiz['article_title'] = article['title']
+        assign_answer_formats(quizzes)
         return quizzes

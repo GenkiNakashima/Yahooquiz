@@ -1,4 +1,5 @@
 """honban（記事取得とクイズセット生成）のテスト。ネットワークには接続しない"""
+import random
 import sys
 from types import SimpleNamespace
 
@@ -180,3 +181,75 @@ def test_quiz_without_choices_is_left_as_is(fake_web, monkeypatch):
     quizzes = QuizGenerator().create_quiz_set(2)
 
     assert all('choices' not in q and q['answer'] == 'A' for q in quizzes)
+
+
+# ---------------------------------------------------------------------------
+# 記述式にする問題の選び方
+# ---------------------------------------------------------------------------
+
+def _typed(*answer_types):
+    return [{'question': f'Q{i}', 'choices': ['a', 'b', 'c', 'd'], 'answer_index': 0, 'answer': 'a',
+             'answer_type': t} for i, t in enumerate(answer_types)]
+
+
+def _text_positions(quizzes):
+    return [i for i, q in enumerate(quizzes) if q['answer_format'] == honban.ANSWER_FORMAT_TEXT]
+
+
+def test_two_or_three_number_or_name_questions_become_text():
+    counts = set()
+    for seed in range(50):
+        quizzes = _typed('number', 'name', 'term', 'number', 'other')
+        honban.assign_answer_formats(quizzes, random.Random(seed))
+        text = _text_positions(quizzes)
+        assert set(text) <= {0, 1, 3}
+        counts.add(len(text))
+        # 選択肢は記述式でも保存しておく。それ以外は4択
+        assert all(q['choices'] == ['a', 'b', 'c', 'd'] for q in quizzes)
+        assert all(q['answer_format'] == honban.ANSWER_FORMAT_CHOICE for i, q in enumerate(quizzes) if i not in text)
+    assert counts == {2, 3}
+
+
+@pytest.mark.parametrize('answer_types, expected', [
+    (('number', 'term', 'other', 'term', 'term'), 1),
+    (('term', 'term', 'other', 'term', 'other'), 0),
+    (('name', 'number', 'term', 'term', 'term'), 2),
+])
+def test_without_enough_candidates_only_those_become_text(answer_types, expected):
+    for seed in range(20):
+        quizzes = _typed(*answer_types)
+        honban.assign_answer_formats(quizzes, random.Random(seed))
+        assert len(_text_positions(quizzes)) == expected
+
+
+def test_quizzes_without_answer_type_stay_four_choice():
+    quizzes = [{'question': 'Q', 'choices': ['a', 'b', 'c', 'd'], 'answer_index': 0, 'answer': 'a'}] * 1
+    honban.assign_answer_formats(quizzes)
+    assert quizzes[0]['answer_format'] == honban.ANSWER_FORMAT_CHOICE
+
+
+def test_create_quiz_set_assigns_answer_formats(fake_web, monkeypatch):
+    def fake_generate(texts):
+        return [{'question': f'Q{i}', 'choices': [f'正解{i}', 'b', 'c', 'd'], 'answer_index': 0,
+                 'answer': f'正解{i}', 'explanation': 'e', 'answer_type': 'number', 'aliases': []}
+                for i in range(len(texts))]
+
+    monkeypatch.setattr(honban.llm_client, 'generate_quizzes', fake_generate)
+
+    quizzes = QuizGenerator().create_quiz_set(5)
+
+    assert len(_text_positions(quizzes)) in (2, 3)
+
+
+@pytest.mark.parametrize('level', ['strong', 'normal', 'weak'])
+def test_ai_is_less_accurate_on_text_questions(level, monkeypatch):
+    config = QuizGenerator().ai_levels[level]
+    assert config['text_correct_rate'] < config['correct_rate']
+
+    generator = QuizGenerator()
+    # 乱数が両方の正解率の間なら、4択は正解・記述式は不正解になる
+    middle = (config['text_correct_rate'] + config['correct_rate']) / 2
+    monkeypatch.setattr(honban.random, 'random', lambda: middle)
+    assert generator.simulate_ai_answer(level) is True
+    assert generator.simulate_ai_answer(level, honban.ANSWER_FORMAT_CHOICE) is True
+    assert generator.simulate_ai_answer(level, honban.ANSWER_FORMAT_TEXT) is False

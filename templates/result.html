@@ -79,6 +79,33 @@
     text-transform: uppercase; color: rgba(26,26,24,0.4);
   }
 
+  /* 正解一覧 */
+  .review-card {
+    width: 100%; max-width: 680px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(184,150,46,0.14); border-radius: 2px;
+    padding: 28px 32px;
+    animation: fadeUp 0.8s var(--ease) 0.35s both;
+  }
+  .review-label {
+    font-size: 10px; font-weight: 300; letter-spacing: 0.22em;
+    color: rgba(26,26,24,0.5); margin-bottom: 12px;
+  }
+  .review-list { list-style: none; margin: 0; padding: 0; }
+  .review-item { padding: 14px 0; border-top: 1px solid rgba(26,26,24,0.08); }
+  .review-item:first-child { border-top: none; }
+  .review-question {
+    font-size: 13px; line-height: 1.6; color: rgba(26,26,24,0.7); overflow-wrap: anywhere;
+  }
+  .review-format {
+    display: inline-block; margin-right: 8px; padding: 1px 6px;
+    font-size: 10px; letter-spacing: 0.08em; color: rgba(26,26,24,0.55);
+    border: 1px solid rgba(26,26,24,0.2); border-radius: 2px;
+  }
+  .review-answer { margin-top: 4px; font-size: 15px; color: var(--charcoal); overflow-wrap: anywhere; }
+  .review-aliases { margin-top: 2px; font-size: 12px; color: rgba(26,26,24,0.55); overflow-wrap: anywhere; }
+
   /* Points earned banner */
   .points-banner {
     width: 100%; max-width: 680px; display: none;
@@ -125,6 +152,7 @@
   .ghost-btn:hover { border-color: rgba(26,26,24,0.4); color: var(--charcoal); }
 
   @media (max-width: 600px) {
+    .review-card { padding: 24px 20px; }
     .score-num { font-size: 56px; }
     .outcome-title { font-size: 32px; }
     .scoreboard { flex-direction: column; }
@@ -191,6 +219,26 @@
       <div class="outcome-sub">A perfectly matched battle!</div>
     {% endif %}
   </div>
+
+  {% if review %}
+  <!-- 正解一覧 -->
+  <section class="review-card" aria-label="正解一覧">
+    <div class="review-label">正解一覧</div>
+    <ol class="review-list">
+      {% for item in review %}
+      <li class="review-item">
+        <div class="review-question">
+          <span class="review-format">Q{{ loop.index }} {{ '記述' if item.is_text else '4択' }}</span>{{ item.question }}
+        </div>
+        <div class="review-answer">正解: <strong>{{ item.answer }}</strong></div>
+        {% if item.aliases %}
+        <div class="review-aliases">この表記でも正解: {{ item.aliases | join('、') }}</div>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+  {% endif %}
 
   <!-- Actions -->
   <div class="actions-wrap">

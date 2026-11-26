@@ -31,11 +31,12 @@ load_dotenv()
 import openai  # noqa: E402
 import requests  # noqa: E402
 
+import answer_checker  # noqa: E402
 import llm_client  # noqa: E402
 from honban import QuizGenerator  # noqa: E402
 
 QUIZ_COUNT = 5
-DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
+DEFAULT_BASE_URL = llm_client.DEFAULT_OPENROUTER_BASE_URL
 RATE_LIMIT_HEADERS = ('x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset', 'retry-after')
 
 
@@ -209,8 +210,12 @@ def main(argv):
             print(f"  Q{i} [記事{i}: {article['title']}]")
             if quiz:
                 print(f"      {quiz['question']}  正解={quiz['answer']!r}  選択肢={quiz['choices']}")
+                print(f"      answer_type={quiz['answer_type']}  aliases={quiz['aliases']}")
             else:
                 print("      （問題なし: 検証失敗など。本番ではこの記事の問題だけ再生成する）")
+        eligible = sum(1 for q in results if q and q['answer_type'] in answer_checker.TEXT_ANSWER_TYPES)
+        print(f"  記述式にできる問題（answer_type が number / name）: {eligible} 問"
+              f"{'' if eligible >= 3 else '  ← プロンプトの指示（3問以上）を満たしていない'}")
         if errors:
             print(f"  検証失敗: {errors}（本番では失敗した問題だけ同じモデルで再生成する）")
         if failed:

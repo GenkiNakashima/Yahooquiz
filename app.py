@@ -1,10 +1,11 @@
 # app.py
 from flask import Flask, render_template, request, session, redirect, url_for, send_from_directory
 from flask_cors import CORS
-from honban import QuizGenerator
+from honban import QuizGenerator, ANSWER_FORMAT_TEXT, ANSWER_FORMAT_CHOICE
+import answer_checker
 import llm_client
 from llm_client import QuizGenerationError
-from services.quiz_set_service import save_quiz_set, get_quiz, record_answer, score_from_results
+from services.quiz_set_service import save_quiz_set, get_quiz, get_quiz_set, record_answer, score_from_results
 import os
 import logging
 from dotenv import load_dotenv
@@ -168,11 +169,23 @@ def game():
        return redirect(url_for('quiz'))
    return render_template('game.html')
 
+def _is_text_question(quiz_data):
+    return quiz_data.get('answer_format') == ANSWER_FORMAT_TEXT
+
+
 def _is_correct_answer(quiz_data, form):
-    """4択なら選んだ選択肢の番号（choice）で、選択肢のない問題なら回答の文字列で正誤を判定する"""
-    if quiz_data.get('choices') and 'choice' in form:
+    """
+    出題形式（保存済みの answer_format）に応じて正誤を判定する。フォームで送られた項目の種類では判定方法を変えない
+    （記述式の問題に選択肢の番号を送っても正解にならない）。
+    answer_format の無い問題（この機能の追加前に保存されたもの）は従来どおり。
+    """
+    answer_format = quiz_data.get('answer_format')
+    if answer_format == ANSWER_FORMAT_TEXT:
+        return answer_checker.is_correct(form.get('answer', ''), quiz_data.get('answer', ''),
+                                         quiz_data.get('aliases') or [], quiz_data.get('answer_type', 'other'))
+    if answer_format == ANSWER_FORMAT_CHOICE or (quiz_data.get('choices') and 'choice' in form):
         try:
-            return int(form['choice']) == quiz_data.get('answer_index')
+            return int(form.get('choice', '')) == quiz_data.get('answer_index')
         except (TypeError, ValueError):
             return False
     user_answer = form.get('answer', '').strip().lower()
@@ -197,6 +210,8 @@ def quiz():
         # 期限切れ・削除済み・全ラウンド終了後など
         return redirect(url_for('index'))
     
+    is_text = _is_text_question(quiz_data)
+
     if request.method == 'GET':
         session['ai_buzzer_time'] = quiz_generator.simulate_ai_buzzer(ai_level)
         ai_thinking = quiz_generator.get_ai_thinking_message(ai_level)
@@ -205,8 +220,11 @@ def quiz():
                             article_content=quiz_data['article_content'],
                             article_url=quiz_data['article_url'],
                             article_title=quiz_data['article_title'],
-                            # 選択肢の文字列だけを渡す（answer_index は画面に出さない）
-                            choices=quiz_data.get('choices'),
+                            # 選択肢の文字列だけを渡す（answer_index は画面に出さない）。
+                            # 記述式の問題では選択肢を渡さない（HTML から答えが分からないように）
+                            choices=None if is_text else quiz_data.get('choices'),
+                            answer_hint=answer_checker.ANSWER_HINTS.get(quiz_data.get('answer_type')) if is_text else None,
+                            max_answer_chars=answer_checker.MAX_INPUT_CHARS,
                             round=session['round'] + 1,
                             total=session['total_rounds'],
                             ai_level=ai_level,
@@ -219,6 +237,7 @@ def quiz():
         # 変数を初期化
         result = None
         ai_thinking = None  # ここで初期化
+        answer_text = None  # 記述式でプレイヤーが入力した回答（判定の調整用に保存する）
         
         print("\n==== 回答判定開始 ====")
         print(f"プレイヤーの回答時間: {player_time:.2f}秒")
@@ -229,10 +248,18 @@ def quiz():
             print(f"問題: {quiz_data.get('question')}")
             print(f"正解: {quiz_data.get('answer')}")
             
-            result = 'correct' if _is_correct_answer(quiz_data, request.form) else 'wrong'
+            submitted = request.form.get('answer', '')
+            if is_text and len(submitted) > answer_checker.MAX_INPUT_CHARS:
+                # 上限を超えた回答は、正規化・保存の前に不正解にする（400 で拒否せず、ゲームを続けられるようにする）
+                result = 'wrong'
+            else:
+                result = 'correct' if _is_correct_answer(quiz_data, request.form) else 'wrong'
+                if is_text:
+                    answer_text = submitted
         else:
             print("\n🤖 AIが早押し成功！")
-            ai_correct = quiz_generator.simulate_ai_answer(ai_level)
+            ai_correct = quiz_generator.simulate_ai_answer(
+                ai_level, ANSWER_FORMAT_TEXT if is_text else ANSWER_FORMAT_CHOICE)
             
             print(f"問題: {quiz_data.get('question')}")
             print(f"正解: {quiz_data.get('answer')}")
@@ -242,7 +269,8 @@ def quiz():
         # 回答結果はサーバー側（Firestore）に記録し、得点はその記録から計算する。
         # 同じラウンドは最初の結果だけを採用するため、Cookie を送り直して回答し直すことはできない。
         try:
-            result, results = record_answer(session['quiz_set_id'], session['round'], result)
+            result, results = record_answer(session['quiz_set_id'], session['round'], result,
+                                            answer_text=answer_text)
         except Exception:
             logger.exception("回答結果の記録に失敗しました")
             return render_template('error.html', error_message=QUIZ_STORAGE_ERROR_MESSAGE), 503
@@ -271,12 +299,39 @@ def quiz():
         return render_template('quiz.html',
                             question=quiz_data['question'],
                             answer=quiz_data['answer'],
+                            # 記述式の問題では、正解として扱う別表記も表示する
+                            aliases=(quiz_data.get('aliases') or []) if is_text else [],
                             explanation=quiz_data.get('explanation', ''),
                             result=result,
                             ai_thinking=ai_thinking,  # 常に定義された状態で渡される
                             round=session['round'],
                             total=session['total_rounds'],
                             ai_level=session.get('ai_level', 'normal'))
+
+def _answer_review(quiz_set_id):
+    """
+    結果画面に出す全問の正解一覧（記述式は別表記も）。5問目は回答後すぐ結果画面に移るため、ここで確認できるようにする。
+    途中で結果画面を開いて答えを見られないよう、全ラウンドの回答が記録されている場合だけ返す。
+    取得できない場合は空（一覧を出さないだけで、結果画面は表示する）。
+    """
+    if not quiz_set_id:
+        return []
+    try:
+        data = get_quiz_set(quiz_set_id)
+    except Exception:
+        logger.exception("正解一覧の取得に失敗しました")
+        return []
+    quizzes = (data or {}).get('quizzes') or []
+    results = (data or {}).get('results') or {}
+    if not quizzes or any(str(i) not in results for i in range(len(quizzes))):
+        return []
+    return [{
+        'question': quiz.get('question', ''),
+        'answer': quiz.get('answer', ''),
+        'aliases': (quiz.get('aliases') or []) if _is_text_question(quiz) else [],
+        'is_text': _is_text_question(quiz),
+    } for quiz in quizzes]
+
 
 @app.route('/result')
 def result():
@@ -289,7 +344,8 @@ def result():
                         player_score=session['score']['player'],
                         ai_score=session['score']['ai'],
                         total=session['total_rounds'],
-                        ai_level=ai_level)
+                        ai_level=ai_level,
+                        review=_answer_review(session.get('quiz_set_id')))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))

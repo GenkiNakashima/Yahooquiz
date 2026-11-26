@@ -197,6 +197,12 @@
   .answer-submit-btn:hover { background: #fff; transform: translateY(-1px); }
 
   /* 4択の選択肢 */
+  .text-answer { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+  .answer-hint {
+    font-size: 12px; font-weight: 300; letter-spacing: 0.04em; text-align: center;
+    color: rgba(245,242,236,0.55);
+  }
+  .result-answer.alias-note { overflow-wrap: anywhere; }
   .choice-grid {
     display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%;
   }
@@ -338,21 +344,25 @@
         </div>
         {% if result == 'ai_correct' %}
           <div class="result-status ai-correct">AIが正解！</div>
-          <div class="result-answer">正解: <strong>{{ answer }}</strong></div>
+          <div class="result-answer">正解: <strong>{{ answer }}</strong></div>{% if aliases %}
+          <div class="result-answer alias-note">この表記でも正解: {{ aliases | join('、') }}</div>{% endif %}
         {% else %}
           <div class="result-status ai-wrong">AIも不正解...</div>
-          <div class="result-answer">正解: <strong>{{ answer }}</strong></div>
+          <div class="result-answer">正解: <strong>{{ answer }}</strong></div>{% if aliases %}
+          <div class="result-answer alias-note">この表記でも正解: {{ aliases | join('、') }}</div>{% endif %}
         {% endif %}
       </div>
     {% elif result == 'correct' %}
       <div class="result-hero">
         <div class="result-status correct">正解！</div>
-        <div class="result-answer">素晴らしい回答でした</div>
+        <div class="result-answer">正解: <strong>{{ answer }}</strong></div>{% if aliases %}
+          <div class="result-answer alias-note">この表記でも正解: {{ aliases | join('、') }}</div>{% endif %}
       </div>
     {% else %}
       <div class="result-hero">
         <div class="result-status wrong">不正解...</div>
-        <div class="result-answer">正解: <strong>{{ answer }}</strong></div>
+        <div class="result-answer">正解: <strong>{{ answer }}</strong></div>{% if aliases %}
+          <div class="result-answer alias-note">この表記でも正解: {{ aliases | join('、') }}</div>{% endif %}
       </div>
     {% endif %}
 
@@ -415,8 +425,15 @@
           {% endfor %}
         </div>
         {% else %}
-        <input class="answer-input-field" type="text" name="answer" required placeholder="回答を入力...">
-        <button type="submit" class="answer-submit-btn">回答する</button>
+        <div class="text-answer">
+          <input class="answer-input-field" type="text" name="answer" required
+                 maxlength="{{ max_answer_chars }}" autocomplete="off" placeholder="回答を入力..."
+                 {% if answer_hint %}aria-describedby="answer-hint"{% endif %}>
+          {% if answer_hint %}
+          <div class="answer-hint" id="answer-hint">{{ answer_hint }}</div>
+          {% endif %}
+          <button type="submit" class="answer-submit-btn">回答する</button>
+        </div>
         {% endif %}
       </div>
     </form>

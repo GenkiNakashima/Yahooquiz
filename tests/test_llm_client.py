@@ -115,7 +115,8 @@ def test_first_model_gpt_oss_120b_success(env, providers):
 
     (quiz,) = llm_client.generate_quizzes([ARTICLE])
 
-    assert quiz == {**VALID_QUIZ, 'answer': '政策金利'}
+    # answer_type の無い出力は記述式の対象外（other）、aliases は空として扱う
+    assert quiz == {**VALID_QUIZ, 'answer': '政策金利', 'answer_type': 'other', 'aliases': []}
     ((_, init, call),) = providers.calls
     assert init['api_key'] == GROQ_KEY
     assert init['max_retries'] == 0
@@ -662,3 +663,65 @@ def test_article_index_failures_on_next_candidate_keep_mapping(env, providers):
     assert [q['question'] for q in quizzes] == [f'問題{i}' for i in range(1, 6)]
     (fallback,) = providers.calls_to(GROQ_URL, GPT_OSS_20B)
     assert _prompt_articles(fallback) == [ARTICLES[4]]
+
+
+# ---------------------------------------------------------------------------
+# answer_type・aliases
+# ---------------------------------------------------------------------------
+
+def _validated(**fields):
+    return llm_client.validate_quiz({**VALID_QUIZ, **fields})
+
+
+@pytest.mark.parametrize('answer_type', ['number', 'name', 'term', 'other'])
+def test_valid_answer_types_are_kept(answer_type):
+    assert _validated(answer_type=answer_type)['answer_type'] == answer_type
+
+
+@pytest.mark.parametrize('answer_type', [None, '', 'person', 3, ['name']])
+def test_invalid_answer_type_becomes_other_without_failing_the_quiz(answer_type):
+    assert _validated(answer_type=answer_type)['answer_type'] == 'other'
+
+
+def test_answer_type_is_case_insensitive():
+    assert _validated(answer_type=' Number ')['answer_type'] == 'number'
+
+
+@pytest.mark.parametrize('aliases', [None, 'BOJ', {'a': 'BOJ'}, ['BOJ', 3], ['a', 'b', 'c', 'd']])
+def test_invalid_aliases_become_empty_without_failing_the_quiz(aliases):
+    assert _validated(answer_type='term', aliases=aliases)['aliases'] == []
+
+
+def test_aliases_are_stripped_and_deduplicated():
+    # 空文字・重複・正解と同じ表記（「政策金利」）は除く
+    quiz = _validated(answer_type='term', aliases=[' 金利 ', '金利', '政策金利'])
+    assert quiz['aliases'] == ['金利']
+    assert _validated(answer_type='term', aliases=['', '金利'])['aliases'] == ['金利']
+
+
+def test_alias_matching_a_wrong_choice_is_dropped():
+    """誤答の選択肢と同じ表記の別表記を入れると、誤答が正解になってしまうため除く"""
+    quiz = _validated(answer_type='term', aliases=['消費税', 'ポリシーレート', '最低 賃金'])
+    assert quiz['aliases'] == ['ポリシーレート']
+
+
+def test_number_aliases_are_compared_as_numbers():
+    quiz = llm_client.validate_quiz({
+        'question': '利上げ幅は何%？', 'choices': ['0.1%', '0.25%', '0.5%', '1%'], 'answer_index': 0,
+        'explanation': '0.1%引き上げた。', 'answer_type': 'number', 'aliases': ['0.1パーセント', '0.10', '0.5']})
+    assert quiz['aliases'] == []
+
+
+def test_prompt_asks_for_answer_type_aliases_and_text_friendly_questions():
+    prompt = llm_client.build_user_prompt([ARTICLE] * 5)
+    assert '"answer_type"' in prompt and '"aliases"' in prompt
+    assert '3問以上' in prompt
+    assert '選択肢を見なくても答えが1つに決まる' in prompt
+
+
+def test_openrouter_base_url_defaults_when_unset(env, monkeypatch):
+    """OPENROUTER_BASE_URL が未設定でも、確認スクリプトと同じ既定値で OpenRouter を使う"""
+    monkeypatch.delenv('OPENROUTER_BASE_URL')
+    (router,) = llm_client._openrouter_candidates()
+    assert router['base_url'] == 'https://openrouter.ai/api/v1' == llm_client.DEFAULT_OPENROUTER_BASE_URL
+    assert 'openrouter' in llm_client.configured_providers()

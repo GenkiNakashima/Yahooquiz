@@ -51,16 +51,19 @@ def save_quiz_set(quizzes, metadata=None):
         'quizzes': quizzes,
         'metadata': metadata or {},
         'results': {},
+        # 記述式の問題でプレイヤーが入力した回答（正規化の調整用。quiz_sets ごと TTL で削除される）
+        'answers': {},
         'created_at': now,
         'expires_at': now + RETENTION,
     })
     return quiz_set_id
 
 
-def record_answer(quiz_set_id, index, result):
+def record_answer(quiz_set_id, index, result, answer_text=None):
     """
     index 番目（0始まり）のラウンドの回答結果を記録し、(採用された結果, 全ラウンドの結果) を返す。
     すでに記録済みのラウンドは最初の結果を採用する（Cookie を送り直して回答し直すことはできない）。
+    answer_text（記述式でプレイヤーが入力した回答）を渡すと、結果と一緒に answers に記録する。
     Raises:
         QuizSetNotFound: クイズセットが存在しない、または期限切れ
         ValueError: index・result が不正
@@ -68,11 +71,12 @@ def record_answer(quiz_set_id, index, result):
     if result not in RESULTS:
         raise ValueError(f"invalid result: {result}")
     db = get_db()
-    return _record_answer_in_transaction(db.transaction(), db.collection(COLLECTION).document(quiz_set_id), index, result)
+    return _record_answer_in_transaction(db.transaction(), db.collection(COLLECTION).document(quiz_set_id),
+                                         index, result, answer_text)
 
 
 @fs.transactional
-def _record_answer_in_transaction(transaction, ref, index, result):
+def _record_answer_in_transaction(transaction, ref, index, result, answer_text=None):
     doc = ref.get(transaction=transaction)
     if not doc.exists:
         raise QuizSetNotFound(ref.id)
@@ -87,8 +91,22 @@ def _record_answer_in_transaction(transaction, ref, index, result):
     if key in results:
         return results[key], results
     results[key] = result
-    transaction.update(ref, {'results': results})
+    updates = {'results': results}
+    if answer_text is not None:
+        answers = dict(data.get('answers') or {})
+        answers[key] = answer_text
+        updates['answers'] = answers
+    transaction.update(ref, updates)
     return result, results
+
+
+def get_quiz_set(quiz_set_id):
+    """クイズセット全体（quizzes・results など）を返す。見つからない・期限切れの場合は None"""
+    doc = get_db().collection(COLLECTION).document(quiz_set_id).get()
+    if not doc.exists:
+        return None
+    data = doc.to_dict() or {}
+    return None if is_expired(data) else data
 
 
 def get_quiz(quiz_set_id, index):

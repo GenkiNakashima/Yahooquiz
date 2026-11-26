@@ -182,7 +182,7 @@ Groq のレート制限はモデルごとなので、1つ目のモデルが 429 
 | `GROQ_BASE_URL` | Groq の OpenAI 互換エンドポイント（未設定時は既定値） | `https://api.groq.com/openai/v1` |
 | `GROQ_MODELS` | 使用するモデルをカンマ区切りで優先順に指定（未設定時は既定値） | `openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b` |
 | `OPENROUTER_API_KEY` | OpenRouter の API キー | |
-| `OPENROUTER_BASE_URL` | OpenRouter の API エンドポイント | `https://openrouter.ai/api/v1` |
+| `OPENROUTER_BASE_URL` | OpenRouter の API エンドポイント（未設定なら `https://openrouter.ai/api/v1`） | `https://openrouter.ai/api/v1` |
 | `OPENROUTER_MODELS` | 無料モデル（`:free`）をカンマ区切りで優先順に指定 | |
 | `OPENROUTER_SITE_URL` / `OPENROUTER_APP_NAME` | 任意。OpenRouter の推奨ヘッダー（`HTTP-Referer` / `X-Title`） | |
 | `LLM_TIMEOUT_SECONDS` | 1リクエストのタイムアウト秒数（既定 30） | `30` |

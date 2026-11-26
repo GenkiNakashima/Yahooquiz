@@ -1,64 +1,59 @@
 # Docker実行ガイド
 
-データベースは Cloud Firestore を使います（コンテナ内に DB は立てません）。
-コンテナからは、手元の Application Default Credentials（ADC）を使って Firestore に接続します。
+データベースは Cloud Firestore ですが、ローカルの Docker では **Firestore エミュレーター**を使います。
+本番の Firestore には接続しません（認証情報もマウントしません）。`docker-compose.yml` の `firestore` サービスが
+エミュレーターで、アプリはその起動を待ってから起動します。エミュレーターのデータはコンテナを止めると消えます。
 
 ## 方法1: Docker Compose（推奨）
 
 ### 手順
 
-1. **Firestore の認証情報を用意（最初に1回だけ）**
-   ```bash
-   gcloud auth application-default login
-   ```
-   `~/.config/gcloud/application_default_credentials.json` が作られ、コンテナに読み取り専用でマウントされます。
-   サービスアカウントキーを使う場合は、`.env.docker` の `GOOGLE_ADC_FILE` にそのファイルのパスを指定してください。
-
-2. **環境変数の設定**
+1. **環境変数の設定**
    ```bash
    cp .env.docker.example .env.docker
-   # .env.docker を編集して GOOGLE_CLOUD_PROJECT と
+   # .env.docker を編集して SECRET_KEY / JWT_SECRET_KEY と
    # GROQ_API_KEY / OPENROUTER_API_KEY / OPENROUTER_MODELS などを設定
    ```
 
-3. **起動**
+2. **起動**
    ```bash
    docker-compose --env-file .env.docker up --build
    ```
 
-4. **アクセス**
+3. **アクセス**
    - アプリケーション: http://localhost:8080
 
-5. **停止**
+4. **停止**
    ```bash
    docker-compose down
    ```
 
 ## 方法2: docker run
 
+手元で起動したエミュレーター（README の「ローカル開発」を参照）に、コンテナから接続します。
+コンテナから接続できるよう、エミュレーターは `--host-port=0.0.0.0:8085` で起動してください。
+
 ```bash
 docker build -t yahooquiz-app .
 docker run -p 8080:8080 \
   --env-file .env.docker \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/secrets/adc.json \
-  -v ~/.config/gcloud/application_default_credentials.json:/secrets/adc.json:ro \
+  -e FIRESTORE_EMULATOR_HOST=host.docker.internal:8085 \
+  -e GOOGLE_CLOUD_PROJECT=demo-yahooquiz \
   yahooquiz-app
 ```
 
 ## トラブルシューティング
 
-### Firestore に接続できない
+### 起動時に `UnsafeFirestoreTargetError` で止まる
 
-**ログ**: `Failed to initialize Firestore: Your default credentials were not found.`
-または `Firestore initialization failed ... Some features may be unavailable.`
+**ログ**: `FIRESTORE_EMULATOR_HOST が設定されていません` または `Firestore エミュレーター（...）に接続できません`
 
-アプリは起動しますが、ログイン・ランキング・ゲームなど DB を使う機能が動きません。
+本番以外の環境では、本番の Firestore に接続しないよう、エミュレーターが必須です。
 
 **解決方法**:
-- `gcloud auth application-default login` を実行したか確認
-- `.env.docker` の `GOOGLE_CLOUD_PROJECT` が正しいプロジェクト ID か確認
-- `GOOGLE_ADC_FILE` を指定している場合、そのファイルが存在するか確認
-- そのアカウント（またはサービスアカウント）に Firestore への読み書き権限（例: `roles/datastore.user`）があるか確認
+- Docker Compose: `firestore` サービスが起動しているか確認（`docker-compose ps`、`docker-compose logs firestore`）
+- docker run: 手元のエミュレーターを `--host-port=0.0.0.0:8085` で起動しているか、`FIRESTORE_EMULATOR_HOST` を渡しているか確認
+- `K_SERVICE` を設定していないか確認（本番の判別に使うため、ローカルでは設定しない）
 
 ### 環境変数が読み込まれない
 

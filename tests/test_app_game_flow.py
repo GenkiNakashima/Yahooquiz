@@ -32,6 +32,10 @@ def app_module():
     mp.setenv('GROQ_API_KEY', 'test-key')
     mp.setenv('GROQ_BASE_URL', 'https://groq.test/openai/v1')
     mp.setenv('GROQ_MODELS', 'test-model')
+    # app の import 時に Firestore へ接続しない（起動時のアイコン投入が本番やエミュレーターに触れないようにする）
+    import db
+    mp.setattr(db, 'check_firestore_target', lambda: None)
+    mp.setattr(db, 'init_db', lambda: None)
     module = importlib.import_module('app')
     module.app.config['TESTING'] = True
     yield module
